@@ -119,6 +119,8 @@ body { overflow: hidden; }
 .tx-item .tx-type-badge { font-size: 10px; padding: 2px 6px; border-radius: 6px; margin-top: 3px; display: inline-block; }
 .tx-item .tx-type-badge.fixed { background: #ede9fe; color: #7c5cbf; }
 .tx-item .tx-type-badge.onetime { background: #f5f5f7; color: #888; }
+.tx-item .tx-type-badge.transfer { background: #e5f0ff; color: #4a7fd4; }
+.tx-amount.transfer-muted { color: #aaa; }
 
 .tx-summary-bar { display: flex; background: white; border-bottom: 1px solid #e5e5ea; }
 .tx-summary-item { flex: 1; padding: 10px; text-align: center; }

@@ -66,8 +66,8 @@ function renderHome() {
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const monthPct = Math.round((now.getDate() / daysInMonth) * 100);
 
-  // Income from fixed items
-  const totalIncome = state.fixedItems
+  // Fixed income items
+  const fixedIncome = state.fixedItems
     .filter(i => i.type === 'income')
     .reduce((s, i) => s + Number(i.amount), 0);
 
@@ -76,16 +76,18 @@ function renderHome() {
     .filter(i => i.type === 'expense')
     .reduce((s, i) => s + Number(i.amount), 0);
 
-  // Transaction expenses (this month, debits only)
+  // This month's transactions (excluding transfers)
   const thisMonth = now.getMonth();
   const thisYear = now.getFullYear();
-  const txDebit = state.transactions
-    .filter(t => {
-      const d = new Date(t.date);
-      return d.getMonth() === thisMonth && d.getFullYear() === thisYear && t.debit > 0;
-    })
-    .reduce((s, t) => s + t.debit, 0);
+  const monthTx = state.transactions.filter(t => {
+    const d = new Date(t.date);
+    return d.getMonth() === thisMonth && d.getFullYear() === thisYear && !t.isTransfer;
+  });
 
+  const txDebit = monthTx.filter(t => t.debit > 0).reduce((s, t) => s + t.debit, 0);
+  const txCredit = monthTx.filter(t => t.credit > 0).reduce((s, t) => s + t.credit, 0);
+
+  const totalIncome = fixedIncome + txCredit;
   const totalExp = totalFixedExp + txDebit;
   const cashflow = totalIncome - totalExp - (state.settings.savingsTarget || 0);
   const expensePct = totalIncome > 0 ? Math.min(Math.round((totalExp / totalIncome) * 100), 100) : 0;
@@ -418,10 +420,12 @@ function renderTransactions() {
               </div>
             </div>
             <div class="tx-right">
-              <div class="tx-amount ${isCredit ? 'credit' : 'debit'}">${isCredit ? '+' : '-'}${fmt(isCredit ? t.credit : t.debit)}</div>
-              <span class="tx-type-badge ${t.isFixed ? 'fixed' : 'onetime'}" onclick="toggleTxFixed('${t.id}',this)" style="cursor:pointer;">
-                ${t.isFixed ? 'קבוע' : 'חד פעמי'}
-              </span>
+              <div class="tx-amount ${t.isTransfer ? 'transfer-muted' : (isCredit ? 'credit' : 'debit')}">${t.isTransfer ? '↔' : (isCredit ? '+' : '-')}${fmt(isCredit ? t.credit : t.debit)}</div>
+              <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;">
+                <span class="tx-type-badge ${t.isTransfer ? 'transfer' : (t.isFixed ? 'fixed' : 'onetime')}" onclick="toggleTxTransfer('${t.id}')" style="cursor:pointer;">
+                  ${t.isTransfer ? 'העברה' : (t.isFixed ? 'קבוע' : 'חד פעמי')}
+                </span>
+              </div>
             </div>
           </div>
         `;
@@ -434,9 +438,18 @@ function toggleTxFixed(id, badge) {
   const tx = state.transactions.find(t => t.id === id);
   if (!tx) return;
   tx.isFixed = !tx.isFixed;
-  badge.className = `tx-type-badge ${tx.isFixed ? 'fixed' : 'onetime'}`;
-  badge.textContent = tx.isFixed ? 'קבוע' : 'חד פעמי';
   saveState();
+  renderTransactions();
+  renderHome();
+}
+
+function toggleTxTransfer(id) {
+  const tx = state.transactions.find(t => t.id === id);
+  if (!tx) return;
+  tx.isTransfer = !tx.isTransfer;
+  saveState();
+  renderTransactions();
+  renderHome();
 }
 
 // ===== FILE UPLOAD =====
