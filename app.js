@@ -533,7 +533,8 @@ function parseLeumiRows(rows) {
     if (hasValueDate) {
       descCol = 2; debitCol = 4; creditCol = 5;
     } else {
-      descCol = 1; debitCol = 3; creditCol = 2;
+      // 5-col format: תאריך | תיאור | בחובה | בזכות | יתרה
+      descCol = 1; debitCol = 2; creditCol = 3;
     }
 
     const description = String(row[descCol] || '').trim();
