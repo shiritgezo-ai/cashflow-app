@@ -509,51 +509,51 @@ function parseLeumiRows(rows) {
     } else {
       const parts = firstCell.split(/[\/\-\.]/);
       if (parts.length === 3) {
-        let d = parts[0], m = parts[1], y = parts[2];
+        let y = parts[2];
         if (y.length === 2) y = '20' + y;
-        // Handle DD/MM/YYYY vs YYYY/MM/DD
-        if (parseInt(parts[0]) > 31) { // starts with year
+        if (parseInt(parts[0]) > 31) { // starts with year (YYYY/MM/DD)
           date = `${parts[0]}-${parts[1].padStart(2,'0')}-${parts[2].padStart(2,'0')}`;
         } else {
-          date = `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+          // Leumi exports M/D/YYYY (e.g. 3/1/2026 = March 1st)
+          const month = parts[0], day = parts[1];
+          date = `${y}-${month.padStart(2,'0')}-${day.padStart(2,'0')}`;
         }
       } else {
         continue;
       }
     }
 
-    // Description is usually col 1
-    const description = String(row[1] || '').trim();
-    if (!description) continue;
+    // Detect format: does row[1] look like a date? (תאריך ערך column)
+    // 7-col format: תאריך | תאריך ערך | תיאור | אסמכתא | חובה | זכות | יתרה
+    // 5-col format: תאריך | תיאור | זכות | חובה | יתרה
+    const secondCell = String(row[1] || '').trim();
+    const hasValueDate = !!secondCell.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
 
-    // Try to find debit/credit in remaining columns
-    // Leumi typical: תאריך | תיאור הפעולה | זכות | חובה | יתרה
-    // Or:           תאריך | תיאור | חובה | זכות | יתרה  (order varies)
-    let credit = 0, debit = 0;
-
-    // Scan columns 2-5 for numeric values
-    const nums = [];
-    for (let c = 2; c < Math.min(row.length, 6); c++) {
-      const val = parseFloat(String(row[c] || '').replace(/,/g, ''));
-      if (!isNaN(val) && val !== 0) nums.push({ col: c, val });
+    let descCol, debitCol, creditCol;
+    if (hasValueDate) {
+      descCol = 2; debitCol = 4; creditCol = 5;
+    } else {
+      descCol = 1; debitCol = 3; creditCol = 2;
     }
 
-    if (nums.length >= 2) {
-      // Assume first positive-context column is credit, second is debit
-      // Leumi: col2=זכות, col3=חובה
-      const v2 = parseFloat(String(row[2] || '').replace(/,/g, ''));
-      const v3 = parseFloat(String(row[3] || '').replace(/,/g, ''));
-      if (!isNaN(v2) && v2 > 0) credit = v2;
-      if (!isNaN(v3) && v3 > 0) debit = v3;
-      // If both empty, try swapped
-      if (credit === 0 && debit === 0 && nums.length > 0) {
-        if (nums[0].val > 0) credit = nums[0].val;
-        if (nums.length > 1 && nums[1].val > 0) debit = nums[1].val;
+    const description = String(row[descCol] || '').trim();
+    if (!description) continue;
+
+    let credit = 0, debit = 0;
+    const vCredit = parseFloat(String(row[creditCol] || '').replace(/,/g, ''));
+    const vDebit  = parseFloat(String(row[debitCol]  || '').replace(/,/g, ''));
+    if (!isNaN(vCredit) && vCredit > 0) credit = vCredit;
+    if (!isNaN(vDebit)  && vDebit  > 0) debit  = vDebit;
+
+    // Fallback: single numeric value in row
+    if (credit === 0 && debit === 0) {
+      for (let c = descCol + 1; c < row.length; c++) {
+        const v = parseFloat(String(row[c] || '').replace(/,/g, ''));
+        if (!isNaN(v) && v !== 0) {
+          if (v > 0) credit = v; else debit = Math.abs(v);
+          break;
+        }
       }
-    } else if (nums.length === 1) {
-      // Single amount - could be either
-      if (nums[0].val > 0) credit = nums[0].val;
-      else if (nums[0].val < 0) debit = Math.abs(nums[0].val);
     }
 
     if (credit === 0 && debit === 0) continue;
