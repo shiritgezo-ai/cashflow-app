@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>מוקאפ — אפליקציית תזרים</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #f0eff5;
+    font-family: -apple-system, 'Segoe UI', sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+    padding: 24px 16px;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+
+  /* ───── Phone Frame ───── */
+  .phone-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .screen-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #6c5ce7;
+    background: #ede9ff;
+    padding: 4px 14px;
+    border-radius: 20px;
+    letter-spacing: 0.3px;
+  }
+
+  .phone {
+    width: 375px;
+    height: 780px;
+    background: #fff;
+    border-radius: 44px;
+    box-shadow: 0 20px 60px rgba(108,92,231,0.18), 0 4px 16px rgba(0,0,0,0.1);
+    overflow: hidden;
+    position: relative;
+    border: 8px solid #1a1a2e;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Notch */
+  .notch {
+    width: 120px;
+    height: 28px;
+    background: #1a1a2e;
+    border-radius: 0 0 20px 20px;
+    margin: 0 auto;
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+  }
+
+  /* Status bar */
+  .status-bar {
+    height: 44px;
+    padding: 12px 20px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: #333;
+    flex-shrink: 0;
+  }
+
+  .status-icons { display: flex; gap: 6px; align-items: center; }
+  .status-icons svg { width: 16px; height: 16px; }
+
+  /* Screen content area */
+  .screen {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-bottom: 70px;
+  }
+
+  .screen::-webkit-scrollbar { display: none; }
+
+  /* ───── Top Bar ───── */
+  .top-bar {
+    background: #fff;
+    padding: 14px 20px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #f0eff5;
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
+
+  .top-bar h1 { font-size: 18px; font-weight: 700; color: #1a1a2e; }
+
+  .upload-btn {
+    background: #6c5ce7;
+    color: #fff;
+    border: none;
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+  }
+
+  /* ───── Bottom Nav ───── */
+  .bottom-nav {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 70px;
+    background: #fff;
+    border-top: 1px solid #ede9ff;
+    display: flex;
+    z-index: 10;
+    padding-bottom: 8px;
+  }
+
+  .nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    font-size: 10px;
+    font-weight: 500;
+    color: #aaa;
+    cursor: pointer;
+  }
+
+  .nav-item.active { color: #6c5ce7; }
+
+  .nav-item svg { width: 22px; height: 22px; }
+
+  .nav-dot {
+    width: 5px;
+    height: 5px;
+    background: #6c5ce7;
+    border-radius: 50%;
+    margin-top: 1px;
+  }
+
+  /* ───── Shared Cards ───── */
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 16px;
+    margin: 0 16px 12px;
+    box-shadow: 0 2px 10px rgba(108,92,231,0.07);
+  }
+
+  .card-title {
+    font-size: 12px;
+    color: #999;
+    font-weight: 500;
+    margin-bottom: 8px;
+  }
+
+  /* ──────────────────────────────────
+     SCREEN 1 — בית
+  ────────────────────────────────── */
+
+  .month-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 20px 8px;
+  }
+
+  .month-nav span {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1a1a2e;
+  }
+
+  .month-nav button {
+    background: #f5f3ff;
+    border: none;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    font-size: 16px;
+    color: #6c5ce7;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .main-card {
+    background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);
+    border-radius: 20px;
+    margin: 0 16px 12px;
+    padding: 20px;
+    color: #fff;
+    box-shadow: 0 8px 24px rgba(108,92,231,0.35);
+  }
+
+  .main-card .label {
+    font-size: 12px;
+    opacity: 0.85;
+    margin-bottom: 4px;
+  }
+
+  .main-card .big-num {
+    font-size: 38px;
+    font-weight: 800;
+    letter-spacing: -1px;
+    line-height: 1;
+  }
+
+  .main-card .big-num.positive { color: #fff; }
+  .main-card .big-num.negative { color: #ff7675; }
+
+  .main-card-row {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255,255,255,0.25);
+  }
+
+  .main-card-row .sub { text-align: center; }
+  .main-card-row .sub .slabel { font-size: 10px; opacity: 0.8; }
+  .main-card-row .sub .snum { font-size: 18px; font-weight: 700; }
+
+  .progress-block { margin: 4px 0 8px; }
+  .progress-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #888;
+    margin-bottom: 5px;
+  }
+
+  .progress-bar-outer {
+    height: 8px;
+    background: #f0eff5;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .progress-bar-inner {
+    height: 100%;
+    border-radius: 8px;
+  }
+
+  .bar-purple { background: linear-gradient(90deg, #6c5ce7, #a29bfe); }
+  .bar-green  { background: linear-gradient(90deg, #00b894, #55efc4); }
+  .bar-orange { background: linear-gradient(90deg, #fd9644, #feca57); }
+
+  .savings-card {
+    background: linear-gradient(135deg, #00b894, #55efc4);
+    border-radius: 16px;
+    margin: 0 16px 12px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 4px 16px rgba(0,184,148,0.25);
+  }
+
+  .savings-card .s-left .s-label { font-size: 11px; color: rgba(255,255,255,0.85); }
+  .savings-card .s-left .s-num { font-size: 24px; font-weight: 800; color: #fff; }
+
+  .savings-card .s-btn {
+    background: rgba(255,255,255,0.3);
+    color: #fff;
+    border: none;
+    border-radius: 12px;
+    padding: 7px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .fixed-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid #f5f3ff;
+    gap: 10px;
+  }
+
+  .fixed-item:last-child { border-bottom: none; }
+
+  .fixed-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+
+  .fixed-details { flex: 1; }
+  .fixed-name { font-size: 13px; font-weight: 600; color: #1a1a2e; }
+  .fixed-date { font-size: 11px; color: #aaa; }
+  .fixed-amount { font-size: 14px; font-weight: 700; color: #e17055; }
+  .fixed-amount.paid { color: #00b894; text-decoration: line-through; opacity: 0.7; }
+
+  .tag {
+    font-size: 9px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 8px;
+    margin-right: 4px;
+  }
+
+  .tag-fixed { background: #ede9ff; color: #6c5ce7; }
+  .tag-transfer { background: #e8f8f5; color: #00b894; }
+  .tag-paid { background: #f0fff4; color: #00b894; }
+
+  /* ──────────────────────────────────
+     SCREEN 2 — קבועות
+  ────────────────────────────────── */
+
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 20px 8px;
+  }
+
+  .section-header h2 { font-size: 14px; font-weight: 700; color: #1a1a2e; }
+  .section-header .count {
+    font-size: 11px;
+    color: #aaa;
+    background: #f5f3ff;
+    padding: 2px 10px;
+    border-radius: 10px;
+  }
+
+  .fixed-list-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 20px;
+    border-bottom: 1px solid #f5f3ff;
+    gap: 12px;
+  }
+
+  .fli-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+
+  .fli-details { flex: 1; }
+  .fli-name { font-size: 14px; font-weight: 600; color: #1a1a2e; }
+  .fli-date { font-size: 11px; color: #bbb; margin-top: 2px; }
+  .fli-right { text-align: left; }
+  .fli-amount { font-size: 15px; font-weight: 700; }
+  .fli-amount.neg { color: #e17055; }
+  .fli-amount.transfer { color: #00b894; }
+
+  .fli-status {
+    font-size: 10px;
+    font-weight: 600;
+    margin-top: 3px;
+  }
+
+  .status-paid { color: #00b894; }
+  .status-pending { color: #fdcb6e; }
+
+  .divider-section {
+    padding: 8px 20px 4px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #bbb;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: #fafafa;
+    border-top: 1px solid #f0eff5;
+    border-bottom: 1px solid #f0eff5;
+  }
+
+  .summary-bar {
+    margin: 12px 16px;
+    background: #f9f8ff;
+    border-radius: 14px;
+    padding: 14px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border: 1px solid #ede9ff;
+  }
+
+  .summary-bar .s-item { text-align: center; }
+  .summary-bar .s-item .slbl { font-size: 10px; color: #aaa; }
+  .summary-bar .s-item .sval { font-size: 16px; font-weight: 800; color: #1a1a2e; }
+  .summary-bar .s-item .sval.neg { color: #e17055; }
+  .summary-bar .s-item .sval.pos { color: #00b894; }
+
+  .add-btn-row {
+    padding: 8px 20px 4px;
+    display: flex;
+    gap: 10px;
+  }
+
+  .add-btn {
+    flex: 1;
+    border: 2px dashed #d4cfff;
+    background: #faf9ff;
+    border-radius: 12px;
+    padding: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #6c5ce7;
+    cursor: pointer;
+    text-align: center;
+  }
+
+  /* ──────────────────────────────────
+     SCREEN 3 — הגדרות
+  ────────────────────────────────── */
+
+  .settings-section {
+    padding: 16px 20px 8px;
+  }
+
+  .settings-section h3 {
+    font-size: 12px;
+    font-weight: 700;
+    color: #bbb;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 10px;
+  }
+
+  .setting-row {
+    display: flex;
+    align-items: center;
+    padding: 14px 16px;
+    background: #fff;
+    border-radius: 14px;
+    margin-bottom: 8px;
+    gap: 12px;
+    box-shadow: 0 1px 6px rgba(108,92,231,0.06);
+  }
+
+  .setting-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+
+  .setting-details { flex: 1; }
+  .setting-name { font-size: 14px; font-weight: 600; color: #1a1a2e; }
+  .setting-desc { font-size: 11px; color: #bbb; margin-top: 2px; }
+
+  .setting-action {
+    font-size: 12px;
+    font-weight: 600;
+    color: #6c5ce7;
+  }
+
+  .setting-value {
+    font-size: 16px;
+    font-weight: 800;
+    color: #6c5ce7;
+  }
+
+  .upload-row {
+    display: flex;
+    align-items: center;
+    padding: 14px 16px;
+    background: #fff;
+    border-radius: 14px;
+    margin-bottom: 8px;
+    gap: 12px;
+    box-shadow: 0 1px 6px rgba(108,92,231,0.06);
+    cursor: pointer;
+  }
+
+  .upload-row:active { opacity: 0.85; }
+
+  .upload-icon { font-size: 20px; }
+
+  .upload-details { flex: 1; }
+  .upload-name { font-size: 14px; font-weight: 600; color: #1a1a2e; }
+  .upload-sub { font-size: 11px; color: #bbb; margin-top: 2px; }
+
+  .upload-status-ok {
+    font-size: 11px;
+    font-weight: 600;
+    color: #00b894;
+    background: #e8f8f5;
+    padding: 3px 9px;
+    border-radius: 8px;
+  }
+
+  .upload-status-none {
+    font-size: 11px;
+    font-weight: 600;
+    color: #fdcb6e;
+    background: #fff9ec;
+    padding: 3px 9px;
+    border-radius: 8px;
+  }
+
+  .transfer-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    background: #fff;
+    border-radius: 12px;
+    margin-bottom: 8px;
+    gap: 12px;
+    box-shadow: 0 1px 6px rgba(108,92,231,0.06);
+  }
+
+  .transfer-item .t-name { flex: 1; font-size: 13px; font-weight: 600; color: #1a1a2e; }
+  .transfer-item .t-amount { font-size: 14px; font-weight: 700; color: #00b894; }
+
+  .toggle {
+    width: 36px;
+    height: 20px;
+    background: #6c5ce7;
+    border-radius: 10px;
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .toggle::after {
+    content: '';
+    width: 16px;
+    height: 16px;
+    background: #fff;
+    border-radius: 50%;
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  }
+
+  /* ───── Subtle annotation ───── */
+  .annotation {
+    position: absolute;
+    font-size: 10px;
+    font-weight: 600;
+    color: #6c5ce7;
+    background: #ede9ff;
+    padding: 2px 8px;
+    border-radius: 6px;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════
+     PHONE 1 — בית
+══════════════════════════════════════ -->
+<div class="phone-wrap">
+  <div class="screen-label">① מסך בית</div>
+  <div class="phone">
+    <div class="notch"></div>
+    <div class="status-bar">
+      <span>9:41</span>
+      <div class="status-icons">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.93 2.93 7.08 2.93 1 9zm8 8l3 3 3-3a4.237 4.237 0 00-6 0zm-4-4l2 2a7.074 7.074 0 0110 0l2-2C15.14 9.14 8.87 9.14 5 13z"/></svg>
+        <svg viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="7" width="20" height="10" rx="2"/><path d="M22 11h1v2h-1z"/></svg>
+      </div>
+    </div>
+
+    <div class="screen">
+      <!-- Top bar -->
+      <div class="top-bar">
+        <h1>תזרים</h1>
+        <button class="upload-btn">⬆ העלאת קובץ</button>
+      </div>
+
+      <!-- Month nav -->
+      <div class="month-nav">
+        <button>›</button>
+        <span>מרץ 2026</span>
+        <button>‹</button>
+      </div>
+
+      <!-- Main card -->
+      <div class="main-card">
+        <div class="label">תזרים פנוי לשימוש</div>
+        <div class="big-num positive">₪4,320</div>
+        <div class="main-card-row">
+          <div class="sub">
+            <div class="slabel">הכנסות</div>
+            <div class="snum">₪22,500</div>
+          </div>
+          <div class="sub">
+            <div class="slabel">הוצאות</div>
+            <div class="snum">₪14,180</div>
+          </div>
+          <div class="sub">
+            <div class="slabel">תזרים חודשי</div>
+            <div class="snum">+₪8,320</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Progress bars -->
+      <div class="card">
+        <div class="progress-block">
+          <div class="progress-label"><span>התקדמות החודש</span><span>43%</span></div>
+          <div class="progress-bar-outer">
+            <div class="progress-bar-inner bar-purple" style="width:43%"></div>
+          </div>
+        </div>
+        <div style="height:10px"></div>
+        <div class="progress-block">
+          <div class="progress-label"><span>ניצול הכנסה</span><span>63%</span></div>
+          <div class="progress-bar-outer">
+            <div class="progress-bar-inner bar-orange" style="width:63%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Savings card -->
+      <div class="savings-card">
+        <div class="s-left">
+          <div class="s-label">יעד חיסכון חודשי</div>
+          <div class="s-num">₪4,000</div>
+        </div>
+        <button class="s-btn">✏ שינוי</button>
+      </div>
+
+      <!-- Upcoming fixed -->
+      <div class="card">
+        <div class="card-title">הוצאות קבועות קרובות</div>
+
+        <div class="fixed-item">
+          <div class="fixed-icon" style="background:#fff0eb">🏠</div>
+          <div class="fixed-details">
+            <div class="fixed-name">שכר דירה <span class="tag tag-fixed">קבועה</span></div>
+            <div class="fixed-date">ב-1 לחודש</div>
+          </div>
+          <div class="fixed-amount paid">₪5,200</div>
+        </div>
+
+        <div class="fixed-item">
+          <div class="fixed-icon" style="background:#f0f0ff">📡</div>
+          <div class="fixed-details">
+            <div class="fixed-name">סלולר <span class="tag tag-fixed">קבועה</span></div>
+            <div class="fixed-date">ב-10 לחודש</div>
+          </div>
+          <div class="fixed-amount">₪290</div>
+        </div>
+
+        <div class="fixed-item">
+          <div class="fixed-icon" style="background:#e8f8f5">💰</div>
+          <div class="fixed-details">
+            <div class="fixed-name">חיסכון ילדים <span class="tag tag-transfer">העברה</span></div>
+            <div class="fixed-date">ב-15 לחודש</div>
+          </div>
+          <div class="fixed-amount" style="color:#00b894">₪1,000</div>
+        </div>
+
+        <div class="fixed-item">
+          <div class="fixed-icon" style="background:#fff9ec">⚡</div>
+          <div class="fixed-details">
+            <div class="fixed-name">חשמל <span class="tag tag-fixed">קבועה</span></div>
+            <div class="fixed-date">ב-20 לחודש</div>
+          </div>
+          <div class="fixed-amount">₪380</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Bottom nav -->
+    <div class="bottom-nav">
+      <div class="nav-item active">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+        בית
+        <div class="nav-dot"></div>
+      </div>
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+        עסקאות
+      </div>
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        קבועות
+      </div>
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0112 0v2"/></svg>
+        הגדרות
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════
+     PHONE 2 — קבועות
+══════════════════════════════════════ -->
+<div class="phone-wrap">
+  <div class="screen-label">② מסך קבועות</div>
+  <div class="phone">
+    <div class="notch"></div>
+    <div class="status-bar">
+      <span>9:41</span>
+      <div class="status-icons">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.93 2.93 7.08 2.93 1 9zm8 8l3 3 3-3a4.237 4.237 0 00-6 0zm-4-4l2 2a7.074 7.074 0 0110 0l2-2C15.14 9.14 8.87 9.14 5 13z"/></svg>
+        <svg viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="7" width="20" height="10" rx="2"/><path d="M22 11h1v2h-1z"/></svg>
+      </div>
+    </div>
+
+    <div class="screen">
+      <div class="top-bar">
+        <h1>קבועות</h1>
+        <button class="upload-btn">⬆ העלאת קובץ</button>
+      </div>
+
+      <!-- Summary bar -->
+      <div class="summary-bar">
+        <div class="s-item">
+          <div class="slbl">סה"כ קבועות</div>
+          <div class="sval neg">₪7,870</div>
+        </div>
+        <div class="s-item">
+          <div class="slbl">כבר ירד</div>
+          <div class="sval pos">₪5,200</div>
+        </div>
+        <div class="s-item">
+          <div class="slbl">עוד לא ירד</div>
+          <div class="sval" style="color:#fdcb6e">₪2,670</div>
+        </div>
+      </div>
+
+      <!-- Fixed expenses section -->
+      <div class="divider-section">הוצאות קבועות — נספרות כהוצאה</div>
+
+      <div class="fixed-list-item">
+        <div class="fli-icon" style="background:#fff0eb">🏠</div>
+        <div class="fli-details">
+          <div class="fli-name">שכר דירה</div>
+          <div class="fli-date">ב-1 לחודש</div>
+        </div>
+        <div class="fli-right">
+          <div class="fli-amount neg">₪5,200</div>
+          <div class="fli-status status-paid">✓ ירד</div>
+        </div>
+      </div>
+
+      <div class="fixed-list-item">
+        <div class="fli-icon" style="background:#f0f0ff">📡</div>
+        <div class="fli-details">
+          <div class="fli-name">סלולר</div>
+          <div class="fli-date">ב-10 לחודש</div>
+        </div>
+        <div class="fli-right">
+          <div class="fli-amount neg">₪290</div>
+          <div class="fli-status status-pending">⏳ ממתין</div>
+        </div>
+      </div>
+
+      <div class="fixed-list-item">
+        <div class="fli-icon" style="background:#fff9ec">⚡</div>
+        <div class="fli-details">
+          <div class="fli-name">חשמל</div>
+          <div class="fli-date">ב-20 לחודש</div>
+        </div>
+        <div class="fli-right">
+          <div class="fli-amount neg">₪380</div>
+          <div class="fli-status status-pending">⏳ ממתין</div>
+        </div>
+      </div>
+
+      <div class="fixed-list-item">
+        <div class="fli-icon" style="background:#f0f8ff">💧</div>
+        <div class="fli-details">
+          <div class="fli-name">ארנונה + מים</div>
+          <div class="fli-date">ב-15 לחודש</div>
+        </div>
+        <div class="fli-right">
+          <div class="fli-amount neg">₪820</div>
+          <div class="fli-status status-pending">⏳ ממתין</div>
+        </div>
+      </div>
+
+      <div class="fixed-list-item">
+        <div class="fli-icon" style="background:#fff0f3">🏋️</div>
+        <div class="fli-details">
+          <div class="fli-name">מנוי כושר</div>
+          <div class="fli-date">ב-5 לחודש</div>
+        </div>
+        <div class="fli-right">
+          <div class="fli-amount neg">₪180</div>
+          <div class="fli-status status-pending">⏳ ממתין</div>
+        </div>
+      </div>
+
+      <!-- Add fixed btn -->
+      <div class="add-btn-row">
+        <button class="add-btn">+ הוסף הוצאה קבועה</button>
+      </div>
+
+      <!-- Internal transfers section -->
+      <div class="divider-section" style="margin-top:8px">העברות פנימיות — לא נספרות כהוצאה</div>
+
+      <div class="fixed-list-item">
+        <div class="fli-icon" style="background:#e8f8f5">💰</div>
+        <div class="fli-details">
+          <div class="fli-name">חיסכון ילדים</div>
+          <div class="fli-date">ב-15 לחודש</div>
+        </div>
+        <div class="fli-right">
+          <div class="fli-amount transfer">₪1,000</div>
+          <div class="fli-status status-pending">⏳ ממתין</div>
+        </div>
+      </div>
+
+      <div class="fixed-list-item">
+        <div class="fli-icon" style="background:#f5f3ff">📈</div>
+        <div class="fli-details">
+          <div class="fli-name">ניירות ערך</div>
+          <div class="fli-date">ב-1 לחודש</div>
+        </div>
+        <div class="fli-right">
+          <div class="fli-amount transfer">₪2,000</div>
+          <div class="fli-status status-paid">✓ הועבר</div>
+        </div>
+      </div>
+
+      <div class="add-btn-row">
+        <button class="add-btn" style="border-color:#a8edda; color:#00b894">+ הוסף העברה פנימית</button>
+      </div>
+
+      <div style="height:8px"></div>
+    </div>
+
+    <div class="bottom-nav">
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+        בית
+      </div>
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+        עסקאות
+      </div>
+      <div class="nav-item active">
+        <svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18" stroke="#fff" stroke-width="2"/></svg>
+        קבועות
+        <div class="nav-dot"></div>
+      </div>
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0112 0v2"/></svg>
+        הגדרות
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════
+     PHONE 3 — הגדרות
+══════════════════════════════════════ -->
+<div class="phone-wrap">
+  <div class="screen-label">③ מסך הגדרות</div>
+  <div class="phone">
+    <div class="notch"></div>
+    <div class="status-bar">
+      <span>9:41</span>
+      <div class="status-icons">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.93 2.93 7.08 2.93 1 9zm8 8l3 3 3-3a4.237 4.237 0 00-6 0zm-4-4l2 2a7.074 7.074 0 0110 0l2-2C15.14 9.14 8.87 9.14 5 13z"/></svg>
+        <svg viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="7" width="20" height="10" rx="2"/><path d="M22 11h1v2h-1z"/></svg>
+      </div>
+    </div>
+
+    <div class="screen">
+      <div class="top-bar">
+        <h1>הגדרות</h1>
+        <button class="upload-btn">⬆ העלאת קובץ</button>
+      </div>
+
+      <!-- Savings goal -->
+      <div class="settings-section">
+        <h3>יעד חיסכון</h3>
+        <div class="setting-row">
+          <div class="setting-icon" style="background:#e8f8f5">🎯</div>
+          <div class="setting-details">
+            <div class="setting-name">יעד חיסכון חודשי</div>
+            <div class="setting-desc">משפיע על התזרים הפנוי</div>
+          </div>
+          <div class="setting-value">₪4,000</div>
+        </div>
+      </div>
+
+      <!-- File imports -->
+      <div class="settings-section">
+        <h3>ייבוא נתונים</h3>
+
+        <div class="upload-row">
+          <div class="upload-icon">🏦</div>
+          <div class="upload-details">
+            <div class="upload-name">קובץ בנק לאומי</div>
+            <div class="upload-sub">Excel מחשבון הבנק</div>
+          </div>
+          <div class="upload-status-ok">✓ עודכן 5.3</div>
+        </div>
+
+        <div class="upload-row">
+          <div class="upload-icon">💳</div>
+          <div class="upload-details">
+            <div class="upload-name">קובץ אשראי</div>
+            <div class="upload-sub">מקס / כאל / ישראכרט</div>
+          </div>
+          <div class="upload-status-none">טרם הועלה</div>
+        </div>
+
+        <div class="setting-row" style="margin-top:0">
+          <div class="setting-icon" style="background:#f5f3ff">🔄</div>
+          <div class="setting-details">
+            <div class="setting-name">תדירות עדכון</div>
+            <div class="setting-desc">כל כמה זמן לעדכן נתונים</div>
+          </div>
+          <div class="setting-action">דו-שבועי ›</div>
+        </div>
+      </div>
+
+      <!-- Internal transfers -->
+      <div class="settings-section">
+        <h3>העברות פנימיות</h3>
+        <div style="font-size:11px; color:#bbb; margin-bottom:10px; padding: 0 2px">
+          עסקאות שמוגדרות כהעברה פנימית — לא נספרות כהוצאה
+        </div>
+
+        <div class="transfer-item">
+          <div class="toggle"></div>
+          <div class="t-name">העברה לחיסכון ילדים</div>
+          <div class="t-amount">₪1,000</div>
+        </div>
+
+        <div class="transfer-item">
+          <div class="toggle"></div>
+          <div class="t-name">קרן השתלמות</div>
+          <div class="t-amount">₪1,500</div>
+        </div>
+
+        <div class="transfer-item">
+          <div class="toggle" style="background:#ddd"></div>
+          <div class="t-name">ניירות ערך — IBI</div>
+          <div class="t-amount" style="color:#aaa">₪2,000</div>
+        </div>
+
+        <button class="add-btn" style="width:100%; margin-top:4px">+ הוסף העברה פנימית</button>
+      </div>
+
+      <!-- About -->
+      <div class="settings-section">
+        <h3>אחר</h3>
+        <div class="setting-row">
+          <div class="setting-icon" style="background:#f5f3ff">🗑</div>
+          <div class="setting-details">
+            <div class="setting-name">מחיקת כל הנתונים</div>
+            <div class="setting-desc">אתחול מחדש</div>
+          </div>
+          <div class="setting-action" style="color:#e17055">מחיקה</div>
+        </div>
+      </div>
+
+      <div style="height:16px"></div>
+    </div>
+
+    <div class="bottom-nav">
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+        בית
+      </div>
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+        עסקאות
+      </div>
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        קבועות
+      </div>
+      <div class="nav-item active">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a5 5 0 100 10A5 5 0 0012 2zm0 12c-5.33 0-8 2.67-8 4v2h16v-2c0-1.33-2.67-4-8-4z"/></svg>
+        הגדרות
+        <div class="nav-dot"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
