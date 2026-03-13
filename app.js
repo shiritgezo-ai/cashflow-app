@@ -514,8 +514,8 @@ function parseLeumiRows(rows) {
         if (parseInt(parts[0]) > 31) { // starts with year (YYYY/MM/DD)
           date = `${parts[0]}-${parts[1].padStart(2,'0')}-${parts[2].padStart(2,'0')}`;
         } else {
-          // Leumi exports M/D/YYYY (e.g. 3/1/2026 = March 1st)
-          const month = parts[0], day = parts[1];
+          // Leumi exports D/M/YYYY (e.g. 3/1/2026 = January 3rd)
+          const day = parts[0], month = parts[1];
           date = `${y}-${month.padStart(2,'0')}-${day.padStart(2,'0')}`;
         }
       } else {
@@ -545,9 +545,11 @@ function parseLeumiRows(rows) {
     if (!isNaN(vCredit) && vCredit > 0) credit = vCredit;
     if (!isNaN(vDebit)  && vDebit  > 0) debit  = vDebit;
 
-    // Fallback: single numeric value in row
+    // Fallback: check only designated debit/credit columns (avoid picking up אסמכתא or balance)
     if (credit === 0 && debit === 0) {
-      for (let c = descCol + 1; c < row.length; c++) {
+      const startCol = Math.min(debitCol, creditCol);
+      const endCol = Math.max(debitCol, creditCol);
+      for (let c = startCol; c <= endCol; c++) {
         const v = parseFloat(String(row[c] || '').replace(/,/g, ''));
         if (!isNaN(v) && v !== 0) {
           if (v > 0) credit = v; else debit = Math.abs(v);
