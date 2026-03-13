@@ -2,7 +2,7 @@
   "name": "תזרים חודשי",
   "short_name": "תזרים",
   "description": "ניהול תזרים מזומנים חודשי",
-  "start_url": "/index.html",
+  "start_url": "/cashflow-app/index.html",
   "display": "standalone",
   "background_color": "#f5f5f7",
   "theme_color": "#7c5cbf",
