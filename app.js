@@ -514,8 +514,8 @@ function parseLeumiRows(rows) {
         if (parseInt(parts[0]) > 31) { // starts with year (YYYY/MM/DD)
           date = `${parts[0]}-${parts[1].padStart(2,'0')}-${parts[2].padStart(2,'0')}`;
         } else {
-          // Leumi exports D/M/YYYY (e.g. 3/1/2026 = January 3rd)
-          const day = parts[0], month = parts[1];
+          // Leumi exports M/D/YYYY (e.g. 3/1/2026 = March 1st)
+          const month = parts[0], day = parts[1];
           date = `${y}-${month.padStart(2,'0')}-${day.padStart(2,'0')}`;
         }
       } else {
