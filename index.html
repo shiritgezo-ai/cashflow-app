@@ -25,6 +25,11 @@
     <div class="scroll-content">
       <!-- Hero card -->
       <div class="hero-card">
+        <div class="month-nav-bar">
+          <button class="month-nav-btn" onclick="changeViewMonth(-1)">›</button>
+          <span id="home-month-label" class="month-nav-label">טוען...</span>
+          <button class="month-nav-btn" id="month-nav-next" onclick="changeViewMonth(+1)" disabled>‹</button>
+        </div>
         <div class="hero-label">תזרים חודשי פנוי</div>
         <div class="hero-amount" id="home-cashflow">₪0</div>
         <div class="hero-row">

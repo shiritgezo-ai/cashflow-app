@@ -1,3 +1,16 @@
+// ===== CREDIT CARD PAYMENT DETECTION =====
+// Detects monthly credit card settlement rows in bank (Leumi) data.
+// Defined here (before loadState) because loadState calls it on startup.
+const CREDIT_CARD_PATTERNS = [
+  'חיוב כרטיס', 'כרטיס אשראי', 'מקס', 'max', 'ויזה כאל', 'visa cal',
+  'ישראכרט', 'isracard', 'לאומי קארד', 'leumi card', 'כאל', 'cal ',
+  'דיינרס', 'diners', 'אמריקן אקספרס', 'amex'
+];
+function isCreditCardPayment(description) {
+  const lower = (description || '').toLowerCase();
+  return CREDIT_CARD_PATTERNS.some(p => lower.includes(p.toLowerCase()));
+}
+
 // ===== STATE =====
 const DB_KEY = 'cashflow_v1';
 let state = loadState();
@@ -6,7 +19,7 @@ function defaultState() {
   return {
     fixedItems: [],   // { id, type:'expense'|'income'|'transfer', name, amount, day, emoji, recurrence:'monthly'|'onetime'|'annual', paid:false }
     transactions: [], // { id, source:'leumi'|'max', date, description, debit, credit, isFixed:false }
-    settings: { savingsTarget: 0, salaryDay: 1 }
+    settings: { savingsTarget: 0, salaryDay: 1, lastResetMonth: '' }
   };
 }
 
@@ -28,6 +41,13 @@ function loadState() {
         seenIds.add(newId);
         return { ...t, id: newId, isTransfer };
       });
+      // Auto-reset "paid" flags at the start of each new month
+      const currentMonthKey = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}`;
+      if (loaded.settings.lastResetMonth !== currentMonthKey) {
+        loaded.fixedItems = loaded.fixedItems.map(i => ({ ...i, paid: false }));
+        loaded.settings.lastResetMonth = currentMonthKey;
+      }
+
       return loaded;
     }
   } catch(e) {}
@@ -36,6 +56,19 @@ function loadState() {
 
 function saveState() {
   localStorage.setItem(DB_KEY, JSON.stringify(state));
+}
+
+// ===== MONTH VIEW =====
+const _today = new Date();
+let viewMonth = { year: _today.getFullYear(), month: _today.getMonth() };
+
+function changeViewMonth(delta) {
+  let m = viewMonth.month + delta;
+  let y = viewMonth.year;
+  if (m > 11) { m = 0; y++; }
+  if (m < 0)  { m = 11; y--; }
+  viewMonth = { year: y, month: m };
+  renderHome();
 }
 
 // ===== NAVIGATION =====
@@ -76,8 +109,17 @@ function fmtDate(d) {
 // ===== HOME =====
 function renderHome() {
   const now = new Date();
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const monthPct = Math.round((now.getDate() / daysInMonth) * 100);
+  const isCurrentMonth = viewMonth.year === now.getFullYear() && viewMonth.month === now.getMonth();
+  const daysInMonth = new Date(viewMonth.year, viewMonth.month + 1, 0).getDate();
+  const monthPct = isCurrentMonth ? Math.round((now.getDate() / daysInMonth) * 100) : 100;
+
+  // Update month label and nav buttons
+  const monthLabel = new Date(viewMonth.year, viewMonth.month, 1)
+    .toLocaleDateString('he-IL', { month: 'long', year: 'numeric' });
+  const labelEl = document.getElementById('home-month-label');
+  if (labelEl) labelEl.textContent = monthLabel;
+  const nextBtn = document.getElementById('month-nav-next');
+  if (nextBtn) nextBtn.disabled = isCurrentMonth;
 
   // Fixed income items
   const fixedIncome = state.fixedItems
@@ -90,8 +132,8 @@ function renderHome() {
     .reduce((s, i) => s + Number(i.amount), 0);
 
   // This month's transactions (excluding transfers)
-  const thisMonth = now.getMonth();
-  const thisYear = now.getFullYear();
+  const thisMonth = viewMonth.month;
+  const thisYear = viewMonth.year;
   const monthTx = state.transactions.filter(t => {
     const d = new Date(t.date);
     return d.getMonth() === thisMonth && d.getFullYear() === thisYear && !t.isTransfer;
@@ -435,7 +477,7 @@ function renderTransactions() {
             <div class="tx-right">
               <div class="tx-amount ${t.isTransfer ? 'transfer-muted' : (isCredit ? 'credit' : 'debit')}">${t.isTransfer ? '↔' : (isCredit ? '+' : '-')}${fmt(isCredit ? t.credit : t.debit)}</div>
               <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;">
-                <span class="tx-type-badge ${t.isTransfer ? 'transfer' : (t.isFixed ? 'fixed' : 'onetime')}" onclick="toggleTxTransfer('${t.id}')" style="cursor:pointer;">
+                <span class="tx-type-badge ${t.isTransfer ? 'transfer' : (t.isFixed ? 'fixed' : 'onetime')}" onclick="cycleTxType('${t.id}')" title="לחצי לשינוי סוג" style="cursor:pointer;">
                   ${t.isTransfer ? 'העברה' : (t.isFixed ? 'קבוע' : 'חד פעמי')}
                 </span>
               </div>
@@ -447,19 +489,13 @@ function renderTransactions() {
   }).join('');
 }
 
-function toggleTxFixed(id, badge) {
+// Cycles: onetime → fixed → transfer → onetime
+function cycleTxType(id) {
   const tx = state.transactions.find(t => t.id === id);
   if (!tx) return;
-  tx.isFixed = !tx.isFixed;
-  saveState();
-  renderTransactions();
-  renderHome();
-}
-
-function toggleTxTransfer(id) {
-  const tx = state.transactions.find(t => t.id === id);
-  if (!tx) return;
-  tx.isTransfer = !tx.isTransfer;
+  if (!tx.isFixed && !tx.isTransfer) { tx.isFixed = true; tx.isTransfer = false; }
+  else if (tx.isFixed && !tx.isTransfer) { tx.isFixed = false; tx.isTransfer = true; }
+  else { tx.isFixed = false; tx.isTransfer = false; }
   saveState();
   renderTransactions();
   renderHome();
@@ -506,19 +542,6 @@ async function handleFileUpload(event, source) {
     console.error(err);
     showToast('שגיאה בקריאת הקובץ');
   }
-}
-
-// ===== CREDIT CARD PAYMENT DETECTION =====
-// Detects monthly credit card settlement rows in bank (Leumi) data.
-// These should be excluded from cashflow since individual purchases are tracked via Max.
-const CREDIT_CARD_PATTERNS = [
-  'חיוב כרטיס', 'כרטיס אשראי', 'מקס', 'max', 'ויזה כאל', 'visa cal',
-  'ישראכרט', 'isracard', 'לאומי קארד', 'leumi card', 'כאל', 'cal ',
-  'דיינרס', 'diners', 'אמריקן אקספרס', 'amex'
-];
-function isCreditCardPayment(description) {
-  const lower = description.toLowerCase();
-  return CREDIT_CARD_PATTERNS.some(p => lower.includes(p.toLowerCase()));
 }
 
 // ===== LEUMI PARSER =====
