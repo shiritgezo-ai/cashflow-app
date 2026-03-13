@@ -15,7 +15,18 @@ function loadState() {
     const s = localStorage.getItem(DB_KEY);
     if (s) {
       const parsed = JSON.parse(s);
-      return { ...defaultState(), ...parsed };
+      const loaded = { ...defaultState(), ...parsed };
+      // Fix duplicate IDs from old imports
+      const seenIds = new Set();
+      loaded.transactions = loaded.transactions.map(t => {
+        if (!seenIds.has(t.id)) { seenIds.add(t.id); return t; }
+        let i = 1;
+        while (seenIds.has(`${t.id}_${i}`)) i++;
+        const newId = `${t.id}_${i}`;
+        seenIds.add(newId);
+        return { ...t, id: newId };
+      });
+      return loaded;
     }
   } catch(e) {}
   return defaultState();
@@ -574,7 +585,9 @@ function parseLeumiRows(rows) {
 
     if (credit === 0 && debit === 0) continue;
 
-    const id = `leumi_${date}_${description}_${credit}_${debit}`.replace(/\s/g, '_');
+    const baseId = `leumi_${date}_${description}_${credit}_${debit}`.replace(/\s/g, '_');
+    const dupCount = results.filter(r => r.id === baseId || r.id.startsWith(baseId + '_')).length;
+    const id = dupCount === 0 ? baseId : `${baseId}_${dupCount}`;
     results.push({ id, source: 'leumi', date, description, credit, debit, isFixed: false });
   }
 
