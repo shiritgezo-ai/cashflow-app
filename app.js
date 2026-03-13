@@ -19,12 +19,14 @@ function loadState() {
       // Fix duplicate IDs from old imports
       const seenIds = new Set();
       loaded.transactions = loaded.transactions.map(t => {
-        if (!seenIds.has(t.id)) { seenIds.add(t.id); return t; }
+        // Auto-mark credit card payments in Leumi as transfer
+        const isTransfer = t.isTransfer || (t.source === 'leumi' && isCreditCardPayment(t.description));
+        if (!seenIds.has(t.id)) { seenIds.add(t.id); return { ...t, isTransfer }; }
         let i = 1;
         while (seenIds.has(`${t.id}_${i}`)) i++;
         const newId = `${t.id}_${i}`;
         seenIds.add(newId);
-        return { ...t, id: newId };
+        return { ...t, id: newId, isTransfer };
       });
       return loaded;
     }
@@ -496,12 +498,27 @@ async function handleFileUpload(event, source) {
     state.transactions.push(...newTxs);
     saveState();
     renderTransactions();
-    showToast(`✓ נטענו ${parsed.length} עסקאות (${newTxs.length} חדשות)`);
+    const autoTransfer = newTxs.filter(t => t.isTransfer).length;
+    const suffix = autoTransfer > 0 ? ` — ${autoTransfer} חיובי אשראי הוחרגו אוטומטית` : '';
+    showToast(`✓ נטענו ${parsed.length} עסקאות (${newTxs.length} חדשות)${suffix}`);
 
   } catch (err) {
     console.error(err);
     showToast('שגיאה בקריאת הקובץ');
   }
+}
+
+// ===== CREDIT CARD PAYMENT DETECTION =====
+// Detects monthly credit card settlement rows in bank (Leumi) data.
+// These should be excluded from cashflow since individual purchases are tracked via Max.
+const CREDIT_CARD_PATTERNS = [
+  'חיוב כרטיס', 'כרטיס אשראי', 'מקס', 'max', 'ויזה כאל', 'visa cal',
+  'ישראכרט', 'isracard', 'לאומי קארד', 'leumi card', 'כאל', 'cal ',
+  'דיינרס', 'diners', 'אמריקן אקספרס', 'amex'
+];
+function isCreditCardPayment(description) {
+  const lower = description.toLowerCase();
+  return CREDIT_CARD_PATTERNS.some(p => lower.includes(p.toLowerCase()));
 }
 
 // ===== LEUMI PARSER =====
@@ -588,7 +605,8 @@ function parseLeumiRows(rows) {
     const baseId = `leumi_${date}_${description}_${credit}_${debit}`.replace(/\s/g, '_');
     const dupCount = results.filter(r => r.id === baseId || r.id.startsWith(baseId + '_')).length;
     const id = dupCount === 0 ? baseId : `${baseId}_${dupCount}`;
-    results.push({ id, source: 'leumi', date, description, credit, debit, isFixed: false });
+    const isTransfer = isCreditCardPayment(description);
+    results.push({ id, source: 'leumi', date, description, credit, debit, isFixed: false, isTransfer });
   }
 
   return results;
