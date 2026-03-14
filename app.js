@@ -655,26 +655,78 @@ async function handleFileUpload(event, source) {
 }
 
 // ===== LEUMI PARSER =====
-// Bank Leumi Excel format:
-// Typical columns: תאריך | תיאור | זכות | חובה | יתרה
-// First rows are header/metadata, data starts when we find a date pattern
+// Bank Leumi Excel format has two variants:
+//   5-col: תאריך | תיאור | חובה | זכות | יתרה
+//   7-col: תאריך | תאריך ערך | תיאור | אסמכתא | חובה | זכות | יתרה
+// IMPORTANT: format is detected ONCE for the whole file, not per-row.
+// Per-row detection caused wrong column reads when a reference number in col1
+// happened to look like a date, resulting in amounts like 6,244.48 → 6442.
 function parseLeumiRows(rows) {
   const results = [];
-  let dataStarted = false;
 
+  // ── Step 1: detect format (5-col vs 7-col) from the file header or first data rows ──
+  let descCol = 1, debitCol = 2, creditCol = 3; // default: 5-col
+  let formatDetected = false;
+
+  // First: look for a Leumi header row that names the columns (most reliable)
+  for (let i = 0; i < Math.min(rows.length, 15); i++) {
+    const row = rows[i];
+    if (!row) continue;
+    const cells = row.map(c => String(c || '').trim());
+    const rowText = cells.join(' ');
+    // Header row typically contains both חובה and זכות
+    if (rowText.includes('חובה') && rowText.includes('זכות')) {
+      // Find exact column positions from header names
+      let dCol = -1, cCol = -1, nCol = -1;
+      cells.forEach((cell, c) => {
+        if ((cell === 'חובה' || cell === 'בחובה' || cell === 'סכום חובה') && dCol < 0) dCol = c;
+        if ((cell === 'זכות' || cell === 'בזכות' || cell === 'סכום זכות') && cCol < 0) cCol = c;
+        if ((cell === 'תיאור' || cell === 'תיאור פעולה' || cell === 'פרטים') && nCol < 0) nCol = c;
+      });
+      if (dCol >= 0 && cCol >= 0) {
+        debitCol  = dCol;
+        creditCol = cCol;
+        descCol   = nCol >= 0 ? nCol : (dCol > 2 ? 2 : 1);
+        formatDetected = true;
+        break;
+      }
+    }
+  }
+
+  // Second: if no header, detect from the first data rows — check CONSISTENTLY
+  // whether col[1] is a date across the first several rows
+  if (!formatDetected) {
+    let sevenColVotes = 0, fiveColVotes = 0;
+    let checked = 0;
+    for (let i = 0; i < rows.length && checked < 5; i++) {
+      const row = rows[i];
+      if (!row || row.length < 3) continue;
+      const first = String(row[0] || '').trim();
+      if (!first.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/)) continue;
+      checked++;
+      const second = String(row[1] || '').trim();
+      if (second.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/) && row.length >= 7) {
+        sevenColVotes++;
+      } else {
+        fiveColVotes++;
+      }
+    }
+    if (sevenColVotes > fiveColVotes) {
+      // 7-col: תאריך | תאריך ערך | תיאור | אסמכתא | חובה | זכות | יתרה
+      descCol = 2; debitCol = 4; creditCol = 5;
+    }
+    // else keep 5-col defaults: descCol=1, debitCol=2, creditCol=3
+  }
+
+  // ── Step 2: parse each data row using the detected format ──
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     if (!row || row.length < 3) continue;
 
-    // Detect data rows: first cell looks like a date (DD/MM/YYYY or YYYY-MM-DD)
     const firstCell = String(row[0] || '').trim();
-    const dateMatch = firstCell.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/) ||
-                      firstCell.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-
-    if (!dateMatch && !dataStarted) continue;
-    if (!dateMatch) continue;
-
-    dataStarted = true;
+    const isDate = firstCell.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/) ||
+                   firstCell.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!isDate) continue;
 
     // Parse date
     let date;
@@ -682,57 +734,37 @@ function parseLeumiRows(rows) {
       date = firstCell; // already YYYY-MM-DD
     } else {
       const parts = firstCell.split(/[\/\-\.]/);
-      if (parts.length === 3) {
-        let y = parts[2];
-        if (y.length === 2) y = '20' + y;
-        if (parseInt(parts[0]) > 31) { // starts with year (YYYY/MM/DD)
-          date = `${parts[0]}-${parts[1].padStart(2,'0')}-${parts[2].padStart(2,'0')}`;
-        } else {
-          // Leumi exports M/D/YYYY (e.g. 3/1/2026 = March 1st)
-          const month = parts[0], day = parts[1];
-          date = `${y}-${month.padStart(2,'0')}-${day.padStart(2,'0')}`;
-        }
+      if (parts.length !== 3) continue;
+      let y = parts[2];
+      if (y.length === 2) y = '20' + y;
+      if (parseInt(parts[0]) > 31) {
+        date = `${parts[0]}-${parts[1].padStart(2,'0')}-${parts[2].padStart(2,'0')}`;
       } else {
-        continue;
+        // Leumi typically exports M/D/YYYY  →  month is parts[0]
+        date = `${y}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}`;
       }
-    }
-
-    // Detect format: does row[1] look like a date? (תאריך ערך column)
-    // 7-col format: תאריך | תאריך ערך | תיאור | אסמכתא | חובה | זכות | יתרה
-    // 5-col format: תאריך | תיאור | זכות | חובה | יתרה
-    const secondCell = String(row[1] || '').trim();
-    const hasValueDate = !!secondCell.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
-
-    let descCol, debitCol, creditCol;
-    if (hasValueDate) {
-      descCol = 2; debitCol = 4; creditCol = 5;
-    } else {
-      // 5-col format: תאריך | תיאור | בחובה | בזכות | יתרה
-      descCol = 1; debitCol = 2; creditCol = 3;
     }
 
     const description = String(row[descCol] || '').trim();
     if (!description) continue;
 
-    // Skip balance/opening entries
-    if (description.includes('יתרה') && (row[debitCol] === undefined || row[debitCol] === '')) continue;
+    // Skip balance/opening balance entries
+    if (description.includes('יתרה') || description.includes('יתרת פתיחה')) continue;
 
     let credit = 0, debit = 0;
-    const vCredit = parseFloat(String(row[creditCol] || '').replace(/,/g, ''));
     const vDebit  = parseFloat(String(row[debitCol]  || '').replace(/,/g, ''));
-    if (!isNaN(vCredit) && vCredit > 0) credit = vCredit;
+    const vCredit = parseFloat(String(row[creditCol] || '').replace(/,/g, ''));
     if (!isNaN(vDebit)  && vDebit  > 0) debit  = vDebit;
+    if (!isNaN(vCredit) && vCredit > 0) credit = vCredit;
 
-    // Fallback: check only designated debit/credit columns (avoid picking up אסמכתא or balance)
+    // If both still zero, scan only within the known debit/credit column range
     if (credit === 0 && debit === 0) {
-      const startCol = Math.min(debitCol, creditCol);
-      const endCol = Math.max(debitCol, creditCol);
-      for (let c = startCol; c <= endCol; c++) {
+      const lo = Math.min(debitCol, creditCol);
+      const hi = Math.max(debitCol, creditCol);
+      for (let c = lo; c <= hi; c++) {
         const v = parseFloat(String(row[c] || '').replace(/,/g, ''));
-        if (!isNaN(v) && v !== 0) {
-          if (v > 0) credit = v; else debit = Math.abs(v);
-          break;
-        }
+        if (!isNaN(v) && v > 0) { credit = v; break; }
+        if (!isNaN(v) && v < 0) { debit = Math.abs(v); break; }
       }
     }
 
@@ -750,25 +782,37 @@ function parseLeumiRows(rows) {
 
 // ===== MAX PARSER =====
 // Max (מקס) Excel format:
-// Columns (Hebrew): תאריך עסקה | שם בית עסק | קטגוריה | סוג עסקה | סכום עסקה | סכום חיוב | מטבע | ארבע ספרות
-// For installment transactions: extra columns for installment info + "תשלום X מתוך Y" text
+// תאריך עסקה | שם בית עסק | קטגוריה | סוג עסקה | סכום עסקה | סכום חיוב | מטבע | ארבע ספרות | תאריך חיוב | פירוט תשלום
+// For installment transactions (סוג עסקה = תשלומים):
+//   - תאריך עסקה = original PURCHASE date (e.g. May 2025) — NOT the billing month
+//   - תאריך חיוב = BILLING date (e.g. April 2026) — this is what we must use
+//   - סכום חיוב  = monthly installment amount charged this month
 function parseMaxRows(rows) {
   const results = [];
   let headerRowIndex = -1;
-  let colDate = -1, colName = -1, colAmount = -1;
+  let colDate = -1, colBillingDate = -1, colName = -1;
+  let colChargeAmount = -1, colTxAmount = -1, colType = -1;
 
-  // Find header row
+  // Find header row and detect column positions by name
   for (let i = 0; i < Math.min(rows.length, 20); i++) {
     const row = rows[i];
     if (!row) continue;
     const rowStr = row.map(c => String(c || '').trim());
 
-    // Look for key column names
     for (let c = 0; c < rowStr.length; c++) {
       const cell = rowStr[c];
-      if (cell.includes('תאריך') && !cell.includes('חיוב')) colDate = c;
-      if (cell.includes('שם בית עסק') || cell.includes('תיאור') || cell.includes('פירוט')) colName = c;
-      if (cell.includes('סכום חיוב') || cell.includes('סכום עסקה')) colAmount = Math.max(colAmount, c);
+      // Transaction date (original purchase date)
+      if ((cell === 'תאריך עסקה' || cell === 'תאריך') && colDate < 0) colDate = c;
+      // Billing/charge date — critical for installments
+      if (cell === 'תאריך חיוב' || cell === 'תאריך לחיוב') colBillingDate = c;
+      // Merchant name
+      if (cell === 'שם בית עסק' || cell === 'פירוט' || cell === 'תיאור עסקה') colName = c;
+      // Transaction type (רגיל / תשלומים / קרדיט)
+      if (cell === 'סוג עסקה' || cell === 'סוג') colType = c;
+      // Monthly charge (what's actually billed this month)
+      if (cell === 'סכום חיוב' || cell === 'סכום לחיוב' || cell === 'סכום לחיוב בש"ח') colChargeAmount = c;
+      // Original transaction amount
+      if (cell === 'סכום עסקה' || cell === 'סכום מקורי') colTxAmount = c;
     }
 
     if (colDate >= 0 && colName >= 0) {
@@ -777,10 +821,10 @@ function parseMaxRows(rows) {
     }
   }
 
-  // If no header found, try generic approach
+  // If no header found, fall back to generic column positions
   if (headerRowIndex < 0) {
-    colDate = 0; colName = 1; colAmount = 3; // Common Max format
-    // Find first data row (has a date)
+    colDate = 0; colName = 1;
+    colTxAmount = 4; colChargeAmount = 5;
     for (let i = 0; i < rows.length; i++) {
       const cell = String(rows[i]?.[0] || '').trim();
       if (cell.match(/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/)) {
@@ -790,27 +834,38 @@ function parseMaxRows(rows) {
     }
   }
 
+  // Helper: parse a DD-MM-YYYY or DD/MM/YYYY date string → YYYY-MM-DD
+  function parseMaxDate(cellVal) {
+    const s = String(cellVal || '').trim();
+    if (!s.match(/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/)) return null;
+    const parts = s.split(/[\/\-\.]/);
+    if (parts.length < 3) return null;
+    let d = parts[0], m = parts[1], y = parts[2];
+    if (y.length === 2) y = '20' + y;
+    return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+  }
+
   const startRow = headerRowIndex + 1;
 
   for (let i = startRow; i < rows.length; i++) {
     const row = rows[i];
     if (!row || row.length < 2) continue;
 
-    const firstCell = String(row[colDate] || '').trim();
-    if (!firstCell.match(/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/)) continue;
+    const purchaseDateStr = String(row[colDate] || '').trim();
+    if (!purchaseDateStr.match(/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/)) continue;
 
-    // Parse date
-    const parts = firstCell.split(/[\/\-\.]/);
-    if (parts.length < 3) continue;
-    let d = parts[0], m = parts[1], y = parts[2];
-    if (y.length === 2) y = '20' + y;
-    const date = `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+    const purchaseDate = parseMaxDate(purchaseDateStr);
+    if (!purchaseDate) continue;
 
     const description = String(row[colName] || '').trim();
     if (!description) continue;
 
-    // ===== PARSE INSTALLMENT INFO =====
-    // Scan all cells in this row for "תשלום X מתוך Y" pattern
+    // ===== INSTALLMENT DETECTION =====
+    // Check if this row is an installment transaction
+    const txType = colType >= 0 ? String(row[colType] || '').trim() : '';
+    const isInstallment = txType.includes('תשלומים');
+
+    // Scan all cells for "תשלום X מתוך Y" pattern (appears in last column of installment rows)
     let installmentCurrent = 0, installmentTotal = 0;
     for (const cell of row) {
       const cellStr = String(cell || '').trim();
@@ -822,19 +877,43 @@ function parseMaxRows(rows) {
       }
     }
 
-    // Amount - try colAmount, then scan for first positive number
-    let amount = 0;
-    if (colAmount >= 0) {
-      const amountCell = String(row[colAmount] || '').replace(/,/g, '').trim();
-      amount = parseFloat(amountCell);
-    }
-    if (isNaN(amount) || amount === 0) {
-      for (let c = 2; c < row.length; c++) {
+    // ===== DATE: use billing date for installments =====
+    // Installment rows have תאריך עסקה = original purchase date (could be 2025!)
+    // but תאריך חיוב = the actual month being billed (2026) — use that instead
+    let date = purchaseDate;
+    if (isInstallment && colBillingDate >= 0) {
+      const billingDate = parseMaxDate(row[colBillingDate]);
+      if (billingDate) date = billingDate;
+    } else if (isInstallment) {
+      // No billing date column detected — scan row for a second date-like cell
+      for (let c = 0; c < row.length; c++) {
+        if (c === colDate) continue;
         const cellStr = String(row[c] || '').trim();
-        // Skip cells that look like installment detail text
-        if (cellStr.includes('תשלום')) continue;
+        if (cellStr.match(/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/)) {
+          const alt = parseMaxDate(cellStr);
+          if (alt && alt !== purchaseDate) { date = alt; break; }
+        }
+      }
+    }
+
+    // ===== AMOUNT: prefer monthly charge (סכום חיוב) over original amount =====
+    let amount = 0;
+    // Try סכום חיוב first (monthly installment or total for regular tx)
+    if (colChargeAmount >= 0) {
+      amount = parseFloat(String(row[colChargeAmount] || '').replace(/,/g, ''));
+    }
+    // Fallback: try סכום עסקה
+    if ((isNaN(amount) || amount === 0) && colTxAmount >= 0) {
+      amount = parseFloat(String(row[colTxAmount] || '').replace(/,/g, ''));
+    }
+    // Last resort: scan cols from right to left for first positive number
+    // (right side avoids picking up installment counts / category codes)
+    if (isNaN(amount) || amount === 0) {
+      for (let c = row.length - 1; c >= 2; c--) {
+        const cellStr = String(row[c] || '').trim();
+        if (cellStr.includes('תשלום') || cellStr.includes('/') || cellStr.includes('-')) continue;
         const v = parseFloat(cellStr.replace(/,/g, ''));
-        if (!isNaN(v) && v > 0) { amount = v; break; }
+        if (!isNaN(v) && v > 0 && v < 1000000) { amount = v; break; }
       }
     }
 
