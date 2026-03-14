@@ -126,8 +126,15 @@
   <div id="screen-tx" class="screen">
     <div class="scroll-content">
 
+      <!-- Month navigation (synced with home screen) -->
+      <div class="month-nav-bar" style="padding: 12px 16px 0;">
+        <button class="month-nav-btn" onclick="changeViewMonth(-1)">›</button>
+        <span id="tx-month-label" class="month-nav-label">טוען...</span>
+        <button class="month-nav-btn" id="tx-month-nav-next" onclick="changeViewMonth(+1)" disabled>‹</button>
+      </div>
+
       <!-- Upload areas -->
-      <div style="padding: 12px 16px 0; display:flex; gap:10px;">
+      <div style="padding: 8px 16px 0; display:flex; gap:10px;">
         <label style="flex:1; display:block;">
           <div class="upload-area" style="margin:0; padding:16px;">
             <div class="upload-icon">🏦</div>

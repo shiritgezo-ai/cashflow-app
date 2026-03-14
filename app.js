@@ -18,7 +18,7 @@ let state = loadState();
 function defaultState() {
   return {
     fixedItems: [],   // { id, type:'expense'|'income'|'transfer', name, amount, day, emoji, recurrence:'monthly'|'onetime'|'annual', paid:false }
-    transactions: [], // { id, source:'leumi'|'max', date, description, debit, credit, isFixed:false }
+    transactions: [], // { id, source:'leumi'|'max', date, description, debit, credit, isFixed:false, isTransfer:false, installmentCurrent:0, installmentTotal:0 }
     settings: { savingsTarget: 0, salaryDay: 1, lastResetMonth: '' }
   };
 }
@@ -32,8 +32,11 @@ function loadState() {
       // Fix duplicate IDs from old imports
       const seenIds = new Set();
       loaded.transactions = loaded.transactions.map(t => {
-        // Auto-mark credit card payments in Leumi as transfer
-        const isTransfer = t.isTransfer || (t.source === 'leumi' && isCreditCardPayment(t.description));
+        // IMPORTANT: preserve user's explicit isTransfer changes.
+        // Only auto-detect if isTransfer was never set (undefined = old data before feature was added).
+        const isTransfer = t.isTransfer !== undefined
+          ? t.isTransfer
+          : (t.source === 'leumi' && isCreditCardPayment(t.description));
         if (!seenIds.has(t.id)) { seenIds.add(t.id); return { ...t, isTransfer }; }
         let i = 1;
         while (seenIds.has(`${t.id}_${i}`)) i++;
@@ -69,6 +72,7 @@ function changeViewMonth(delta) {
   if (m < 0)  { m = 11; y--; }
   viewMonth = { year: y, month: m };
   renderHome();
+  if (currentScreen === 'tx') renderTransactions();
 }
 
 // ===== NAVIGATION =====
@@ -95,15 +99,33 @@ function showToast(msg, duration = 2500) {
 }
 
 // ===== FORMAT =====
+// Show decimal places only when there are cents (e.g. ₪6,244.48 not ₪6,244.00)
 function fmt(n) {
-  return '₪' + Math.round(n).toLocaleString('he-IL');
+  const num = Number(n) || 0;
+  const rounded2 = Math.round(num * 100) / 100;
+  if (rounded2 === Math.floor(rounded2)) {
+    // Whole number - no decimals
+    return '₪' + rounded2.toLocaleString('he-IL');
+  }
+  return '₪' + rounded2.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+
 function fmtDate(d) {
   if (!d) return '';
   if (typeof d === 'string') return d;
   const dt = new Date(d);
   if (isNaN(dt)) return d;
   return dt.toLocaleDateString('he-IL', { day:'numeric', month:'numeric', year:'2-digit' });
+}
+
+// ===== HTML ESCAPING (for safe inline attributes) =====
+function escapeAttr(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 // ===== HOME =====
@@ -126,9 +148,9 @@ function renderHome() {
     .filter(i => i.type === 'income')
     .reduce((s, i) => s + Number(i.amount), 0);
 
-  // Fixed expenses
-  const totalFixedExp = state.fixedItems
-    .filter(i => i.type === 'expense')
+  // FIXED: Use only UNPAID fixed expenses (paid ones are already in bank transactions)
+  const upcomingFixedExp = state.fixedItems
+    .filter(i => i.type === 'expense' && !i.paid)
     .reduce((s, i) => s + Number(i.amount), 0);
 
   // This month's transactions (excluding transfers)
@@ -142,8 +164,10 @@ function renderHome() {
   const txDebit = monthTx.filter(t => t.debit > 0).reduce((s, t) => s + t.debit, 0);
   const txCredit = monthTx.filter(t => t.credit > 0).reduce((s, t) => s + t.credit, 0);
 
-  const totalIncome = fixedIncome + txCredit;
-  const totalExp = totalFixedExp + txDebit;
+  // Income = actual received + expected fixed income
+  // Expenses = actual transactions + upcoming unpaid fixed expenses
+  const totalIncome = txCredit + fixedIncome;
+  const totalExp = txDebit + upcomingFixedExp;
   const cashflow = totalIncome - totalExp - (state.settings.savingsTarget || 0);
   const expensePct = totalIncome > 0 ? Math.min(Math.round((totalExp / totalIncome) * 100), 100) : 0;
 
@@ -152,7 +176,7 @@ function renderHome() {
   cfEl.textContent = fmt(cashflow);
   cfEl.className = 'hero-amount ' + (cashflow >= 0 ? 'positive' : 'negative');
   document.getElementById('home-income').textContent = fmt(totalIncome);
-  document.getElementById('home-fixed-exp').textContent = fmt(totalFixedExp);
+  document.getElementById('home-fixed-exp').textContent = fmt(upcomingFixedExp);
   document.getElementById('home-tx-exp').textContent = fmt(txDebit);
 
   // Progress
@@ -165,7 +189,6 @@ function renderHome() {
   document.getElementById('savings-amount').textContent = fmt(state.settings.savingsTarget || 0);
 
   // Upcoming fixed (unpaid, by day this month)
-  const today = now.getDate();
   const upcoming = state.fixedItems
     .filter(i => i.type === 'expense' && !i.paid)
     .sort((a, b) => Number(a.day) - Number(b.day));
@@ -233,7 +256,20 @@ function renderFixed() {
 
   const total = items.reduce((s, i) => s + Number(i.amount), 0);
 
-  if (items.length === 0) {
+  // Also gather transactions marked as fixed/recurring for this segment
+  let fixedTxs = [];
+  if (fixedSegment === 'expense') {
+    fixedTxs = state.transactions.filter(t => t.isFixed && !t.isTransfer && t.debit > 0);
+  } else if (fixedSegment === 'income') {
+    fixedTxs = state.transactions.filter(t => t.isFixed && !t.isTransfer && t.credit > 0);
+  }
+  fixedTxs.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  const recLabel = { monthly: 'חודשי', onetime: 'חד פעמי', annual: 'שנתי' };
+
+  let html = '';
+
+  if (items.length === 0 && fixedTxs.length === 0) {
     container.innerHTML = `
       <div class="empty-state" style="padding:40px 24px;">
         <div class="empty-icon">${fixedSegment === 'income' ? '💰' : fixedSegment === 'transfer' ? '🔄' : '📋'}</div>
@@ -244,40 +280,75 @@ function renderFixed() {
     return;
   }
 
-  const recLabel = { monthly: 'חודשי', onetime: 'חד פעמי', annual: 'שנתי' };
-
-  container.innerHTML = `
-    <div style="background:white;border-radius:16px;margin:0 16px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
-      ${items.map(item => `
-        <div class="fixed-item">
-          <div class="item-info">
-            <div class="icon" style="background:#f0ebff;">${item.emoji || '📌'}</div>
-            <div class="details">
-              <div class="name">${item.name}</div>
-              <div class="meta">ב-${item.day} לחודש · ${recLabel[item.recurrence] || 'חודשי'}</div>
+  // Manual fixed items
+  if (items.length > 0) {
+    html += `
+      <div style="background:white;border-radius:16px;margin:0 16px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+        ${items.map(item => `
+          <div class="fixed-item">
+            <div class="item-info">
+              <div class="icon" style="background:#f0ebff;">${item.emoji || '📌'}</div>
+              <div class="details">
+                <div class="name">${item.name}</div>
+                <div class="meta">ב-${item.day} לחודש · ${recLabel[item.recurrence] || 'חודשי'}</div>
+              </div>
+            </div>
+            <div class="status">
+              ${fixedSegment === 'expense' ? `
+                <span class="status-badge ${item.paid ? 'paid' : 'pending'}">${item.paid ? '✓ ירד' : 'ממתין'}</span>
+              ` : `
+                <span class="status-badge income-badge">קבועה</span>
+              `}
+              <div class="amount ${fixedSegment === 'income' ? 'income' : 'expense'}">${fmt(item.amount)}</div>
+            </div>
+            <div class="actions">
+              ${fixedSegment === 'expense' ? `<button class="action-btn toggle-paid" onclick="togglePaid('${item.id}')">${item.paid ? 'בטל' : '✓ ירד'}</button>` : ''}
+              <button class="action-btn edit" onclick="openEditFixed('${item.id}')">✏️</button>
+              <button class="action-btn delete" onclick="deleteFixed('${item.id}')">🗑</button>
             </div>
           </div>
-          <div class="status">
-            ${fixedSegment === 'expense' ? `
-              <span class="status-badge ${item.paid ? 'paid' : 'pending'}">${item.paid ? '✓ ירד' : 'ממתין'}</span>
-            ` : `
-              <span class="status-badge income-badge">קבועה</span>
-            `}
-            <div class="amount ${fixedSegment === 'income' ? 'income' : 'expense'}">${fmt(item.amount)}</div>
-          </div>
-          <div class="actions">
-            ${fixedSegment === 'expense' ? `<button class="action-btn toggle-paid" onclick="togglePaid('${item.id}')">${item.paid ? 'בטל' : '✓ ירד'}</button>` : ''}
-            <button class="action-btn edit" onclick="openEditFixed('${item.id}')">✏️</button>
-            <button class="action-btn delete" onclick="deleteFixed('${item.id}')">🗑</button>
-          </div>
+        `).join('')}
+        <div class="section-total">
+          <span>סה"כ ${fixedSegment === 'income' ? 'הכנסות' : fixedSegment === 'transfer' ? 'העברות' : 'הוצאות'}</span>
+          <span>${fmt(total)}</span>
         </div>
-      `).join('')}
-      <div class="section-total">
-        <span>סה"כ ${fixedSegment === 'income' ? 'הכנסות' : fixedSegment === 'transfer' ? 'העברות' : 'הוצאות'}</span>
-        <span>${fmt(total)}</span>
       </div>
-    </div>
-  `;
+    `;
+  }
+
+  // Transactions tagged as fixed/recurring - shown as a secondary section
+  if (fixedTxs.length > 0) {
+    const txTotal = fixedTxs.reduce((s, t) => s + (fixedSegment === 'income' ? t.credit : t.debit), 0);
+    html += `
+      <div style="margin: 12px 16px 0;">
+        <div style="font-size:12px;font-weight:600;color:#888;margin-bottom:6px;padding-right:4px;">עסקאות שסווגו כקבועות</div>
+        <div style="background:white;border-radius:16px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+          ${fixedTxs.map(t => {
+            const amt = fixedSegment === 'income' ? t.credit : t.debit;
+            const installInfo = t.installmentTotal > 0
+              ? `<span style="margin-right:6px;color:#7c5cbf;font-size:11px;">תשלום ${t.installmentCurrent} מתוך ${t.installmentTotal}</span>`
+              : '';
+            return `
+              <div class="fixed-item">
+                <div class="item-info">
+                  <div class="icon" style="background:${fixedSegment === 'income' ? '#e8f5e9' : '#fff0f0'};">${fixedSegment === 'income' ? '⬆️' : '⬇️'}</div>
+                  <div class="details">
+                    <div class="name">${t.description}</div>
+                    <div class="meta">${fmtDate(t.date)} · ${t.source === 'leumi' ? 'לאומי' : 'מקס'}${installInfo}</div>
+                  </div>
+                </div>
+                <div class="status">
+                  <div class="amount ${fixedSegment === 'income' ? 'income' : 'expense'}">${fmt(amt)}</div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  container.innerHTML = html;
 }
 
 function togglePaid(id) {
@@ -286,6 +357,7 @@ function togglePaid(id) {
     item.paid = !item.paid;
     saveState();
     renderFixed();
+    renderHome();
     showToast(item.paid ? '✓ סומן כ"ירד"' : 'סומן כממתין');
   }
 }
@@ -410,22 +482,38 @@ function filterTx(filter, btn) {
 }
 
 function renderTransactions() {
+  // Update month label on tx screen
+  const txMonthLabel = new Date(viewMonth.year, viewMonth.month, 1)
+    .toLocaleDateString('he-IL', { month: 'long', year: 'numeric' });
+  const txLabelEl = document.getElementById('tx-month-label');
+  if (txLabelEl) txLabelEl.textContent = txMonthLabel;
+  const txNextBtn = document.getElementById('tx-month-nav-next');
+  const now = new Date();
+  if (txNextBtn) txNextBtn.disabled = (viewMonth.year === now.getFullYear() && viewMonth.month === now.getMonth());
+
+  // Build list of transactions to display
   let txs = [...state.transactions];
 
-  // Apply filter
+  // Apply source/type filter
   if (txFilter === 'leumi') txs = txs.filter(t => t.source === 'leumi');
   else if (txFilter === 'max') txs = txs.filter(t => t.source === 'max');
   else if (txFilter === 'credit') txs = txs.filter(t => t.credit > 0);
   else if (txFilter === 'debit') txs = txs.filter(t => t.debit > 0);
   else if (txFilter === 'fixed') txs = txs.filter(t => t.isFixed);
-  else if (txFilter === 'onetime') txs = txs.filter(t => !t.isFixed);
+  else if (txFilter === 'onetime') txs = txs.filter(t => !t.isFixed && !t.isTransfer);
 
   // Sort by date desc
   txs.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-  // Summary
-  const totalCredit = state.transactions.reduce((s, t) => s + t.credit, 0);
-  const totalDebit = state.transactions.reduce((s, t) => s + t.debit, 0);
+  // ===== SUMMARY: show only current viewMonth, excluding transfers =====
+  const thisMonth = viewMonth.month;
+  const thisYear = viewMonth.year;
+  const monthNonTransfer = state.transactions.filter(t => {
+    const d = new Date(t.date);
+    return d.getMonth() === thisMonth && d.getFullYear() === thisYear && !t.isTransfer;
+  });
+  const totalCredit = monthNonTransfer.reduce((s, t) => s + t.credit, 0);
+  const totalDebit  = monthNonTransfer.reduce((s, t) => s + t.debit, 0);
   document.getElementById('tx-total-credit').textContent = fmt(totalCredit);
   document.getElementById('tx-total-debit').textContent = fmt(totalDebit);
   const balance = totalCredit - totalDebit;
@@ -458,27 +546,38 @@ function renderTransactions() {
 
   const sortedKeys = Object.keys(groups).sort().reverse();
 
+  // FIXED: Use data-tx-id attribute instead of inline onclick with raw ID
+  // This prevents broken JS when ID contains quotes (e.g. בע"מ or בע'מ)
   container.innerHTML = sortedKeys.map(key => {
     const g = groups[key];
+    const isCurrentViewMonth = key === `${thisYear}-${String(thisMonth+1).padStart(2,'0')}`;
     return `
-      <div class="tx-month-header">${g.label}</div>
+      <div class="tx-month-header" style="${isCurrentViewMonth ? 'color:#7c5cbf;' : ''}">${g.label}</div>
       ${g.items.map(t => {
         const isCredit = t.credit > 0;
         const sourceLabel = t.source === 'leumi' ? '🏦' : '💳';
+        const installmentHtml = t.installmentTotal > 0
+          ? `<span class="tx-installment-badge">תשלום ${t.installmentCurrent} מתוך ${t.installmentTotal}</span>`
+          : '';
+        const badgeType = t.isTransfer ? 'transfer' : (t.isFixed ? 'fixed' : 'onetime');
+        const badgeLabel = t.isTransfer ? 'העברה' : (t.isFixed ? 'קבוע' : 'חד פעמי');
         return `
           <div class="tx-item">
             <div class="tx-left">
               <div class="tx-icon ${isCredit ? 'credit' : 'debit'}">${isCredit ? '⬆️' : '⬇️'}</div>
               <div class="tx-details">
                 <div class="tx-name">${t.description}</div>
-                <div class="tx-date">${sourceLabel} ${fmtDate(t.date)}</div>
+                <div class="tx-date">${sourceLabel} ${fmtDate(t.date)}${installmentHtml}</div>
               </div>
             </div>
             <div class="tx-right">
               <div class="tx-amount ${t.isTransfer ? 'transfer-muted' : (isCredit ? 'credit' : 'debit')}">${t.isTransfer ? '↔' : (isCredit ? '+' : '-')}${fmt(isCredit ? t.credit : t.debit)}</div>
               <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;">
-                <span class="tx-type-badge ${t.isTransfer ? 'transfer' : (t.isFixed ? 'fixed' : 'onetime')}" onclick="cycleTxType('${t.id}')" title="לחצי לשינוי סוג" style="cursor:pointer;">
-                  ${t.isTransfer ? 'העברה' : (t.isFixed ? 'קבוע' : 'חד פעמי')}
+                <span class="tx-type-badge ${badgeType}"
+                      data-tx-id="${escapeAttr(t.id)}"
+                      title="לחצי לשינוי סוג"
+                      style="cursor:pointer;">
+                  ${badgeLabel}
                 </span>
               </div>
             </div>
@@ -487,6 +586,17 @@ function renderTransactions() {
       }).join('')}
     `;
   }).join('');
+}
+
+// ===== EVENT DELEGATION for transaction type badges =====
+// Using delegation avoids broken inline onclick when IDs contain quotes (e.g. בע"מ)
+function setupTxListDelegation() {
+  document.getElementById('tx-list').addEventListener('click', function(e) {
+    const badge = e.target.closest('[data-tx-id]');
+    if (badge) {
+      cycleTxType(badge.dataset.txId);
+    }
+  });
 }
 
 // Cycles: onetime → fixed → transfer → onetime
@@ -527,7 +637,7 @@ async function handleFileUpload(event, source) {
       return;
     }
 
-    // Deduplicate by id
+    // Deduplicate by id - preserves all existing user classifications
     const existingIds = new Set(state.transactions.map(t => t.id));
     const newTxs = parsed.filter(t => !existingIds.has(t.id));
 
@@ -604,6 +714,9 @@ function parseLeumiRows(rows) {
     const description = String(row[descCol] || '').trim();
     if (!description) continue;
 
+    // Skip balance/opening entries
+    if (description.includes('יתרה') && (row[debitCol] === undefined || row[debitCol] === '')) continue;
+
     let credit = 0, debit = 0;
     const vCredit = parseFloat(String(row[creditCol] || '').replace(/,/g, ''));
     const vDebit  = parseFloat(String(row[debitCol]  || '').replace(/,/g, ''));
@@ -629,7 +742,7 @@ function parseLeumiRows(rows) {
     const dupCount = results.filter(r => r.id === baseId || r.id.startsWith(baseId + '_')).length;
     const id = dupCount === 0 ? baseId : `${baseId}_${dupCount}`;
     const isTransfer = isCreditCardPayment(description);
-    results.push({ id, source: 'leumi', date, description, credit, debit, isFixed: false, isTransfer });
+    results.push({ id, source: 'leumi', date, description, credit, debit, isFixed: false, isTransfer, installmentCurrent: 0, installmentTotal: 0 });
   }
 
   return results;
@@ -637,8 +750,8 @@ function parseLeumiRows(rows) {
 
 // ===== MAX PARSER =====
 // Max (מקס) Excel format:
-// Columns (Hebrew): תאריך עסקה | שם בית עסק | סכום עסקה | סכום חיוב | מטבע | ארבע ספרות אחרונות
-// All rows are debits (credit card charges)
+// Columns (Hebrew): תאריך עסקה | שם בית עסק | קטגוריה | סוג עסקה | סכום עסקה | סכום חיוב | מטבע | ארבע ספרות
+// For installment transactions: extra columns for installment info + "תשלום X מתוך Y" text
 function parseMaxRows(rows) {
   const results = [];
   let headerRowIndex = -1;
@@ -696,13 +809,31 @@ function parseMaxRows(rows) {
     const description = String(row[colName] || '').trim();
     if (!description) continue;
 
-    // Amount - try colAmount, then scan for first number
+    // ===== PARSE INSTALLMENT INFO =====
+    // Scan all cells in this row for "תשלום X מתוך Y" pattern
+    let installmentCurrent = 0, installmentTotal = 0;
+    for (const cell of row) {
+      const cellStr = String(cell || '').trim();
+      const match = cellStr.match(/תשלום\s+(\d+)\s+מתוך\s+(\d+)/);
+      if (match) {
+        installmentCurrent = parseInt(match[1]);
+        installmentTotal   = parseInt(match[2]);
+        break;
+      }
+    }
+
+    // Amount - try colAmount, then scan for first positive number
     let amount = 0;
-    const amountCell = String(row[colAmount] || '').replace(/,/g, '').trim();
-    amount = parseFloat(amountCell);
+    if (colAmount >= 0) {
+      const amountCell = String(row[colAmount] || '').replace(/,/g, '').trim();
+      amount = parseFloat(amountCell);
+    }
     if (isNaN(amount) || amount === 0) {
       for (let c = 2; c < row.length; c++) {
-        const v = parseFloat(String(row[c] || '').replace(/,/g, ''));
+        const cellStr = String(row[c] || '').trim();
+        // Skip cells that look like installment detail text
+        if (cellStr.includes('תשלום')) continue;
+        const v = parseFloat(cellStr.replace(/,/g, ''));
         if (!isNaN(v) && v > 0) { amount = v; break; }
       }
     }
@@ -711,7 +842,18 @@ function parseMaxRows(rows) {
 
     // Max = credit card = debit (money out)
     const id = `max_${date}_${description}_${amount}`.replace(/\s/g, '_');
-    results.push({ id, source: 'max', date, description, credit: 0, debit: Math.abs(amount), isFixed: false });
+    results.push({
+      id,
+      source: 'max',
+      date,
+      description,
+      credit: 0,
+      debit: Math.abs(amount),
+      isFixed: false,
+      isTransfer: false,
+      installmentCurrent,
+      installmentTotal
+    });
   }
 
   return results;
@@ -788,5 +930,6 @@ if ('serviceWorker' in navigator) {
 // ===== INIT =====
 window.addEventListener('DOMContentLoaded', () => {
   showInstallHint();
+  setupTxListDelegation();
   renderHome();
 });
