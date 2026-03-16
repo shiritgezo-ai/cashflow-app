@@ -1,3 +1,5 @@
+const APP_VERSION = '2026-03-16c';
+
 // ===== CREDIT CARD PAYMENT DETECTION =====
 // Detects monthly credit card settlement rows in bank (Leumi) data.
 // Defined here (before loadState) because loadState calls it on startup.
@@ -1089,6 +1091,20 @@ function parseMaxRows(rows) {
 function renderSettings() {
   document.getElementById('setting-savings').value = state.settings.savingsTarget || '';
   document.getElementById('setting-salary-day').value = state.settings.salaryDay || '';
+  const verEl = document.getElementById('app-version');
+  if (verEl) verEl.textContent = 'גרסה: ' + APP_VERSION;
+}
+
+async function forceUpdate() {
+  if ('serviceWorker' in navigator) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    for (const reg of regs) await reg.unregister();
+  }
+  if ('caches' in window) {
+    const keys = await caches.keys();
+    for (const k of keys) await caches.delete(k);
+  }
+  window.location.reload(true);
 }
 
 function saveSettings() {
