@@ -867,11 +867,7 @@ function parseMaxRows(rows) {
     if (!description) continue;
 
     // ===== INSTALLMENT DETECTION =====
-    // Check if this row is an installment transaction
-    const txType = colType >= 0 ? String(row[colType] || '').trim() : '';
-    const isInstallment = txType.includes('תשלומים');
-
-    // Scan all cells for "תשלום X מתוך Y" pattern (appears in last column of installment rows)
+    // First scan all cells for "תשלום X מתוך Y" so we can use it in isInstallment
     let installmentCurrent = 0, installmentTotal = 0;
     for (const cell of row) {
       const cellStr = String(cell || '').trim();
@@ -882,6 +878,9 @@ function parseMaxRows(rows) {
         break;
       }
     }
+    const txType = colType >= 0 ? String(row[colType] || '').trim() : '';
+    // Treat as installment if type column says so OR if we found תשלום X מתוך Y
+    const isInstallment = txType.includes('תשלומים') || installmentTotal > 0;
 
     // ===== DATE: use billing date for installments, shifted 1 month back =====
     // Installment rows: תאריך חיוב = when the bank deducts the credit card bill (e.g. April).
