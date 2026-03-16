@@ -1,6 +1,6 @@
 {
-  "name": "I'm On It",
-  "short_name": "I'm On It",
+  "name": "Float",
+  "short_name": "Float",
   "description": "ניהול תזרים מזומנים חודשי",
   "start_url": "/cashflow-app/index.html",
   "display": "standalone",
