@@ -128,6 +128,74 @@ function escapeAttr(str) {
     .replace(/>/g, '&gt;');
 }
 
+// ===== PROJECTED FUTURE EXPENSES =====
+// Returns { installments: [...], recurring: [...], total }
+// installments = future installment payments not yet in uploaded data
+// recurring    = isFixed transactions from prev month not yet seen this month
+function getProjectedExpenses(year, month) {
+  const targetIdx = year * 12 + month;
+  const result = { installments: [], recurring: [], total: 0 };
+
+  // 1. Project remaining installments from known series
+  // For each unique series (description + installmentTotal + amount), find the latest tx
+  const seriesMap = new Map();
+  for (const tx of state.transactions) {
+    if (!tx.installmentTotal || tx.installmentTotal <= 1) continue;
+    const key = `${tx.description}__${tx.installmentTotal}__${tx.debit}`;
+    const txIdx = new Date(tx.date).getFullYear() * 12 + new Date(tx.date).getMonth();
+    const existing = seriesMap.get(key);
+    if (!existing || txIdx > existing.idx) {
+      seriesMap.set(key, { description: tx.description, amount: tx.debit,
+        current: tx.installmentCurrent, total: tx.installmentTotal, idx: txIdx });
+    }
+  }
+  for (const [, s] of seriesMap) {
+    const remaining = s.total - s.current;
+    if (remaining <= 0) continue;
+    for (let n = 1; n <= remaining; n++) {
+      const projIdx = s.idx + n;
+      const projCurrent = s.current + n;
+      if (projIdx === targetIdx) {
+        // Only project if not already uploaded for this month
+        const alreadyIn = state.transactions.some(t =>
+          t.description === s.description &&
+          t.installmentCurrent === projCurrent &&
+          t.installmentTotal === s.total
+        );
+        if (!alreadyIn) {
+          result.installments.push({ description: s.description, amount: s.amount,
+            current: projCurrent, total: s.total });
+          result.total += s.amount;
+        }
+        break;
+      }
+      if (projIdx > targetIdx) break;
+    }
+  }
+
+  // 2. Project recurring (isFixed) transactions from previous month
+  const prevYear = month === 0 ? year - 1 : year;
+  const prevMonth = month === 0 ? 11 : month - 1;
+  const prevFixed = state.transactions.filter(t => {
+    const d = new Date(t.date);
+    return d.getFullYear() === prevYear && d.getMonth() === prevMonth &&
+           t.isFixed && !t.isTransfer && t.debit > 0;
+  });
+  for (const tx of prevFixed) {
+    const alreadyIn = state.transactions.some(t => {
+      const d = new Date(t.date);
+      return d.getFullYear() === year && d.getMonth() === month &&
+             t.description === tx.description;
+    });
+    if (!alreadyIn) {
+      result.recurring.push({ description: tx.description, amount: tx.debit });
+      result.total += tx.debit;
+    }
+  }
+
+  return result;
+}
+
 // ===== HOME =====
 function renderHome() {
   const now = new Date();
@@ -164,10 +232,13 @@ function renderHome() {
   const txDebit = monthTx.filter(t => t.debit > 0).reduce((s, t) => s + t.debit, 0);
   const txCredit = monthTx.filter(t => t.credit > 0).reduce((s, t) => s + t.credit, 0);
 
+  // Projected future charges (installments + recurring not yet in data)
+  const projected = getProjectedExpenses(thisYear, thisMonth);
+
   // Income = actual received + expected fixed income
-  // Expenses = actual transactions + upcoming unpaid fixed expenses
+  // Expenses = actual transactions + upcoming unpaid fixed + projected future
   const totalIncome = txCredit + fixedIncome;
-  const totalExp = txDebit + upcomingFixedExp;
+  const totalExp = txDebit + upcomingFixedExp + projected.total;
   const cashflow = totalIncome - totalExp - (state.settings.savingsTarget || 0);
   const expensePct = totalIncome > 0 ? Math.min(Math.round((totalExp / totalIncome) * 100), 100) : 0;
 
@@ -175,9 +246,20 @@ function renderHome() {
   const cfEl = document.getElementById('home-cashflow');
   cfEl.textContent = fmt(cashflow);
   cfEl.className = 'hero-amount ' + (cashflow >= 0 ? 'positive' : 'negative');
+  const noteEl = document.getElementById('projected-note');
+  if (noteEl) {
+    if (projected.total > 0) {
+      noteEl.textContent = `כולל ${fmt(projected.total)} הוצאות צפויות שטרם ירדו`;
+      noteEl.style.display = 'block';
+    } else {
+      noteEl.style.display = 'none';
+    }
+  }
   document.getElementById('home-income').textContent = fmt(totalIncome);
   document.getElementById('home-fixed-exp').textContent = fmt(upcomingFixedExp);
   document.getElementById('home-tx-exp').textContent = fmt(txDebit);
+  const projEl = document.getElementById('home-projected-exp');
+  if (projEl) projEl.textContent = projected.total > 0 ? fmt(projected.total) : '—';
 
   // Progress
   document.getElementById('expense-pct').textContent = expensePct + '%';
@@ -209,6 +291,43 @@ function renderHome() {
         <div class="amount pending">${fmt(i.amount)}</div>
       </div>
     `).join('');
+  }
+
+  // Projected future charges card
+  const projCard = document.getElementById('projected-card');
+  const projList = document.getElementById('projected-list');
+  if (projCard && projList) {
+    const allProjected = [
+      ...projected.installments.map(p => ({
+        label: p.description,
+        sub: `תשלום ${p.current} מתוך ${p.total}`,
+        amount: p.amount,
+        icon: '🔄'
+      })),
+      ...projected.recurring.map(p => ({
+        label: p.description,
+        sub: 'חוזר חודשי',
+        amount: p.amount,
+        icon: '📌'
+      }))
+    ];
+    if (allProjected.length === 0) {
+      projCard.style.display = 'none';
+    } else {
+      projCard.style.display = '';
+      projList.innerHTML = allProjected.map(p => `
+        <div class="upcoming-item">
+          <div class="item-left">
+            <div class="icon" style="background:#fff4e6;">${p.icon}</div>
+            <div>
+              <div class="name">${escapeAttr(p.label)}</div>
+              <div class="date">${p.sub}</div>
+            </div>
+          </div>
+          <div class="amount pending">${fmt(p.amount)}</div>
+        </div>
+      `).join('');
+    }
   }
 
   // Recent transactions (last 5)
@@ -919,15 +1038,19 @@ function parseMaxRows(rows) {
       txTotalAmount = parseFloat(String(row[colTxAmount] || '').replace(/,/g, ''));
       amount = txTotalAmount;
     }
-    // For installments: if we ended up with the total (not monthly), divide by count
+    // For installments: ensure we have the per-installment amount, not the total
     if (isInstallment && installmentTotal > 1 && !isNaN(amount) && amount > 0) {
       const chargeVal = colChargeAmount >= 0 ? parseFloat(String(row[colChargeAmount] || '').replace(/,/g, '')) : NaN;
       const totalVal  = colTxAmount >= 0     ? parseFloat(String(row[colTxAmount]    || '').replace(/,/g, '')) : NaN;
-      // If chargeVal < totalVal and chargeVal > 0 → chargeVal is the monthly payment
-      if (!isNaN(chargeVal) && chargeVal > 0 && (!isNaN(totalVal) && chargeVal < totalVal)) {
+      if (!isNaN(chargeVal) && chargeVal > 0 && !isNaN(totalVal) && chargeVal < totalVal) {
+        // chargeVal is clearly per-installment (e.g. 660 < 7920)
         amount = chargeVal;
       } else if (!isNaN(chargeVal) && chargeVal > 0 && isNaN(totalVal)) {
+        // Only one amount column and it seems reasonable — trust it as-is
         amount = chargeVal;
+      } else {
+        // chargeVal === totalVal or only total available → divide by installment count
+        amount = amount / installmentTotal;
       }
     }
     // Last resort: scan cols from right to left for first positive number

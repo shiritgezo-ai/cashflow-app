@@ -32,6 +32,7 @@
         </div>
         <div class="hero-label">תזרים חודשי פנוי</div>
         <div class="hero-amount" id="home-cashflow">₪0</div>
+        <div id="projected-note" style="display:none;font-size:11px;color:rgba(255,255,255,0.7);margin-top:2px;"></div>
         <div class="hero-row">
           <div class="hero-stat">
             <div class="label">הכנסות</div>
@@ -44,6 +45,10 @@
           <div class="hero-stat">
             <div class="label">עסקאות</div>
             <div class="value" id="home-tx-exp">₪0</div>
+          </div>
+          <div class="hero-stat">
+            <div class="label">צפויות</div>
+            <div class="value" id="home-projected-exp">—</div>
           </div>
         </div>
       </div>
@@ -84,6 +89,12 @@
             <div style="font-size:13px;color:#aaa;margin-top:8px;">הוסיפי הוצאות קבועות בלשונית קבועות</div>
           </div>
         </div>
+      </div>
+
+      <!-- Projected future charges -->
+      <div class="card" style="margin-top:12px;display:none;" id="projected-card">
+        <div class="card-title">חיובים עתידיים צפויים</div>
+        <div id="projected-list"></div>
       </div>
 
       <!-- Recent transactions -->
