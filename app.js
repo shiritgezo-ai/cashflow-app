@@ -469,6 +469,19 @@ function renderFixed() {
     `;
   }
 
+  // Grand total footer
+  if (fixedSegment === 'expense' || fixedSegment === 'income') {
+    const txTotal = fixedTxs.reduce((s, t) => s + (fixedSegment === 'income' ? t.credit : t.debit), 0);
+    const grandTotal = total + txTotal;
+    const label = fixedSegment === 'income' ? 'סה"כ הכנסות קבועות' : 'סה"כ הוצאות קבועות';
+    html += `
+      <div style="margin:16px 16px 0;background:#7c5cbf;border-radius:14px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;">
+        <span style="color:rgba(255,255,255,0.85);font-size:14px;font-weight:600;">${label}</span>
+        <span style="color:white;font-size:20px;font-weight:700;">${fmt(grandTotal)}</span>
+      </div>
+    `;
+  }
+
   container.innerHTML = html;
 }
 
