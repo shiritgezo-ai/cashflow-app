@@ -834,6 +834,12 @@ function parseMaxRows(rows) {
     }
   }
 
+  // If header was found but charge-amount column wasn't matched by name,
+  // assume it's immediately after the tx-amount column (standard Max layout).
+  if (headerRowIndex >= 0 && colChargeAmount < 0 && colTxAmount >= 0) {
+    colChargeAmount = colTxAmount + 1;
+  }
+
   // Helper: parse a DD-MM-YYYY or DD/MM/YYYY date string → YYYY-MM-DD
   function parseMaxDate(cellVal) {
     const s = String(cellVal || '').trim();
@@ -877,23 +883,29 @@ function parseMaxRows(rows) {
       }
     }
 
-    // ===== DATE: use billing date for installments =====
-    // Installment rows have תאריך עסקה = original purchase date (could be 2025!)
-    // but תאריך חיוב = the actual month being billed (2026) — use that instead
+    // ===== DATE: use billing date for installments, shifted 1 month back =====
+    // Installment rows: תאריך חיוב = when the bank deducts the credit card bill (e.g. April).
+    // But the expense BELONGS to the previous month (March) — so we shift back by 1 month.
     let date = purchaseDate;
+    let billingDateStr = null;
     if (isInstallment && colBillingDate >= 0) {
-      const billingDate = parseMaxDate(row[colBillingDate]);
-      if (billingDate) date = billingDate;
+      billingDateStr = parseMaxDate(row[colBillingDate]);
     } else if (isInstallment) {
-      // No billing date column detected — scan row for a second date-like cell
+      // No billing date column — scan row for a second date-like cell
       for (let c = 0; c < row.length; c++) {
         if (c === colDate) continue;
         const cellStr = String(row[c] || '').trim();
         if (cellStr.match(/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/)) {
           const alt = parseMaxDate(cellStr);
-          if (alt && alt !== purchaseDate) { date = alt; break; }
+          if (alt && alt !== purchaseDate) { billingDateStr = alt; break; }
         }
       }
+    }
+    if (isInstallment && billingDateStr) {
+      // Shift 1 month back: April billing → March display
+      const bd = new Date(billingDateStr + 'T12:00:00');
+      bd.setMonth(bd.getMonth() - 1);
+      date = bd.toISOString().split('T')[0];
     }
 
     // ===== AMOUNT: prefer monthly charge (סכום חיוב) over original amount =====
@@ -902,9 +914,22 @@ function parseMaxRows(rows) {
     if (colChargeAmount >= 0) {
       amount = parseFloat(String(row[colChargeAmount] || '').replace(/,/g, ''));
     }
-    // Fallback: try סכום עסקה
+    // Fallback: try סכום עסקה (total transaction amount)
+    let txTotalAmount = NaN;
     if ((isNaN(amount) || amount === 0) && colTxAmount >= 0) {
-      amount = parseFloat(String(row[colTxAmount] || '').replace(/,/g, ''));
+      txTotalAmount = parseFloat(String(row[colTxAmount] || '').replace(/,/g, ''));
+      amount = txTotalAmount;
+    }
+    // For installments: if we ended up with the total (not monthly), divide by count
+    if (isInstallment && installmentTotal > 1 && !isNaN(amount) && amount > 0) {
+      const chargeVal = colChargeAmount >= 0 ? parseFloat(String(row[colChargeAmount] || '').replace(/,/g, '')) : NaN;
+      const totalVal  = colTxAmount >= 0     ? parseFloat(String(row[colTxAmount]    || '').replace(/,/g, '')) : NaN;
+      // If chargeVal < totalVal and chargeVal > 0 → chargeVal is the monthly payment
+      if (!isNaN(chargeVal) && chargeVal > 0 && (!isNaN(totalVal) && chargeVal < totalVal)) {
+        amount = chargeVal;
+      } else if (!isNaN(chargeVal) && chargeVal > 0 && isNaN(totalVal)) {
+        amount = chargeVal;
+      }
     }
     // Last resort: scan cols from right to left for first positive number
     // (right side avoids picking up installment counts / category codes)
