@@ -4,8 +4,8 @@ const ASSETS = [
   '/cashflow-app/index.html',
   '/cashflow-app/app.js',
   '/cashflow-app/style.css',
-  '/cashflow-app/icons/icon-192.png',
-  '/cashflow-app/icons/icon-512.png'
+  '/cashflow-app/icons/icon-192-v2.png',
+  '/cashflow-app/icons/icon-512-v2.png'
 ];
 
 self.addEventListener('install', e => {
