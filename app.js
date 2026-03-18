@@ -940,7 +940,7 @@ function parseMaxRows(rows) {
       // Billing/charge date — critical for installments
       if (cell === 'תאריך חיוב' || cell === 'תאריך לחיוב') colBillingDate = c;
       // Merchant name
-      if (cell === 'שם בית עסק' || cell === 'פירוט' || cell === 'תיאור עסקה') colName = c;
+      if (cell === 'שם בית עסק' || cell === 'שם בית העסק' || cell === 'פירוט' || cell === 'תיאור עסקה') colName = c;
       // Transaction type (רגיל / תשלומים / קרדיט)
       if (cell === 'סוג עסקה' || cell === 'סוג') colType = c;
       // Monthly charge (what's actually billed this month)
