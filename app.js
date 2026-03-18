@@ -240,20 +240,18 @@ function renderWeeklyBudget(cashflow, monthTx, thisYear, thisMonth, isCurrentMon
     const monthName = new Date(thisYear, thisMonth, 1)
       .toLocaleDateString('he-IL', { month: 'long' });
 
-    let fillPct = 0, fillColor = '', labelHtml = '';
+    // Neutral scale: bar fill = spent / totalBudget (so all weeks share the same scale)
+    let fillPct = 0, fillColor = '#7c5cbf', labelHtml = '';
     if (isPast) {
-      const over = spent > budget;
-      fillPct    = budget > 0 ? Math.min(spent / budget * 100, 100) : 100;
-      fillColor  = over ? '#ff3b30' : '#34c759';
-      labelHtml  = `<span class="week-amt-value" style="color:${over ? '#ff3b30' : '#34c759'}">${fmt(spent)}</span><span class="week-amt-label">הוצאת</span>`;
+      fillPct   = totalBudget > 0 ? Math.min(spent / totalBudget * 100 * weeks.length, 100) : 0;
+      labelHtml = `<span class="week-amt-value">${fmt(spent)}</span><span class="week-amt-label">הוצאת</span>`;
     } else if (isCurrent) {
-      fillPct   = budget > 0 ? Math.min(spent / budget * 100, 100) : 0;
-      fillColor = '#7c5cbf';
-      labelHtml = `<span class="week-amt-value">${fmt(budget)}</span><span class="week-amt-label">השבוע</span>`;
+      fillPct   = totalBudget > 0 ? Math.min(spent / totalBudget * 100 * weeks.length, 100) : 0;
+      labelHtml = `<span class="week-amt-value">${fmt(spent)}</span><span class="week-amt-label">עד כה · ${fmt(budget)} לשבוע</span>`;
     } else {
       fillPct   = 0;
-      fillColor = '#c9b8f0';
-      labelHtml = `<span class="week-amt-value">${fmt(budget)}</span><span class="week-amt-label">לשבוע</span>`;
+      fillColor = '#e0d5f7';
+      labelHtml = `<span class="week-amt-value">${fmt(budget)}</span><span class="week-amt-label">משוער</span>`;
     }
 
     return `
