@@ -872,10 +872,11 @@ function parseLeumiRows(rows) {
       let y = parts[2];
       if (y.length === 2) y = '20' + y;
       if (parseInt(parts[0]) > 31) {
+        // YYYY-MM-DD style
         date = `${parts[0]}-${parts[1].padStart(2,'0')}-${parts[2].padStart(2,'0')}`;
       } else {
-        // Leumi typically exports M/D/YYYY  →  month is parts[0]
-        date = `${y}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}`;
+        // Leumi exports D.M.YYYY (Israeli format: day first, then month)
+        date = `${y}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
       }
     }
 
@@ -946,7 +947,7 @@ function parseMaxRows(rows) {
       // Monthly charge (what's actually billed this month)
       if (cell === 'סכום חיוב' || cell === 'סכום לחיוב' || cell === 'סכום לחיוב בש"ח') colChargeAmount = c;
       // Original transaction amount
-      if (cell === 'סכום עסקה' || cell === 'סכום מקורי') colTxAmount = c;
+      if (cell === 'סכום עסקה' || cell === 'סכום מקורי' || cell === 'סכום עסקה מקורי') colTxAmount = c;
     }
 
     if (colDate >= 0 && colName >= 0) {
