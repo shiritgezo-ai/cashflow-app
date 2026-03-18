@@ -225,33 +225,40 @@ function renderWeeklyBudget(cashflow, monthTx, thisYear, thisMonth, isCurrentMon
       }, 0)
   );
 
-  const totalSpent = weekSpending.reduce((s, v) => s + v, 0);
-  // Total variable budget = what's left (cashflow) + what's already been spent on variable
-  const totalBudget = Math.max(0, cashflow + totalSpent);
-  // Per-week budget proportional to days
-  const weekBudget = weeks.map(w => totalBudget * w.days / daysInMonth);
+  // Remaining days in month from today (inclusive); for future months = all days; for past = 1 (avoid /0)
+  const remainingDays = isCurrentMonth ? Math.max(1, daysInMonth - today + 1) : 1;
+
+  // Recommended budget for a week from the remaining cashflow, proportional to remaining days in that week
+  const getRecommended = (w) => {
+    const futureDays = today > w.end ? 0 : Math.max(0, w.end - Math.max(w.start, today) + 1);
+    return Math.max(0, cashflow) * futureDays / remainingDays;
+  };
 
   const rows = weeks.map((w, i) => {
     const isPast    = w.end < today;
     const isCurrent = !isPast && w.start <= today;
     const spent   = weekSpending[i];
-    const budget  = weekBudget[i];
     const weekLabel = w.start === w.end ? `${w.start}` : `${w.start}–${w.end}`;
     const monthName = new Date(thisYear, thisMonth, 1)
       .toLocaleDateString('he-IL', { month: 'long' });
 
-    // Neutral scale: bar fill = spent / totalBudget (so all weeks share the same scale)
     let fillPct = 0, fillColor = '#7c5cbf', labelHtml = '';
     if (isPast) {
-      fillPct   = totalBudget > 0 ? Math.min(spent / totalBudget * 100 * weeks.length, 100) : 0;
+      // Show actual spending, no budget bar
+      fillPct   = 0;
       labelHtml = `<span class="week-amt-value">${fmt(spent)}</span><span class="week-amt-label">הוצאת</span>`;
     } else if (isCurrent) {
-      fillPct   = totalBudget > 0 ? Math.min(spent / totalBudget * 100 * weeks.length, 100) : 0;
-      labelHtml = `<span class="week-amt-value">${fmt(spent)}</span><span class="week-amt-label">עד כה · ${fmt(budget)} לשבוע</span>`;
+      const recommended = getRecommended(w);
+      const isOver = recommended > 0 && spent > recommended;
+      fillPct   = recommended > 0 ? Math.min(spent / recommended * 100, 100) : 0;
+      fillColor = isOver ? '#e05a5a' : '#7c5cbf';
+      const subLabel = recommended > 0 ? `עד כה · ${fmt(recommended)} מומלץ` : 'עד כה';
+      labelHtml = `<span class="week-amt-value">${fmt(spent)}</span><span class="week-amt-label">${subLabel}</span>`;
     } else {
+      const recommended = getRecommended(w);
       fillPct   = 0;
       fillColor = '#e0d5f7';
-      labelHtml = `<span class="week-amt-value">${fmt(budget)}</span><span class="week-amt-label">משוער</span>`;
+      labelHtml = `<span class="week-amt-value">${fmt(recommended)}</span><span class="week-amt-label">מומלץ</span>`;
     }
 
     return `
