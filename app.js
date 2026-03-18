@@ -1,4 +1,4 @@
-const APP_VERSION = '2026-03-16c';
+const APP_VERSION = '2026-03-18a';
 
 // ===== CREDIT CARD PAYMENT DETECTION =====
 // Detects monthly credit card settlement rows in bank (Leumi) data.
@@ -625,8 +625,14 @@ function renderTransactions() {
   const now = new Date();
   if (txNextBtn) txNextBtn.disabled = (viewMonth.year === now.getFullYear() && viewMonth.month === now.getMonth());
 
-  // Build list of transactions to display
-  let txs = [...state.transactions];
+  const thisMonth = viewMonth.month;
+  const thisYear = viewMonth.year;
+
+  // Build list of transactions for the selected month only
+  let txs = state.transactions.filter(t => {
+    const d = new Date(t.date);
+    return d.getFullYear() === thisYear && d.getMonth() === thisMonth;
+  });
 
   // Apply source/type filter
   if (txFilter === 'leumi') txs = txs.filter(t => t.source === 'leumi');
@@ -639,9 +645,7 @@ function renderTransactions() {
   // Sort by date desc
   txs.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-  // ===== SUMMARY: show only current viewMonth, excluding transfers =====
-  const thisMonth = viewMonth.month;
-  const thisYear = viewMonth.year;
+  // ===== SUMMARY: current viewMonth, excluding transfers =====
   const monthNonTransfer = state.transactions.filter(t => {
     const d = new Date(t.date);
     return d.getMonth() === thisMonth && d.getFullYear() === thisYear && !t.isTransfer;
@@ -1017,14 +1021,16 @@ function parseMaxRows(rows) {
     // Treat as installment if type column says so OR if we found תשלום X מתוך Y
     const isInstallment = txType.includes('תשלומים') || installmentTotal > 0;
 
-    // ===== DATE: use billing date for installments, shifted 1 month back =====
-    // Installment rows: תאריך חיוב = when the bank deducts the credit card bill (e.g. April).
-    // But the expense BELONGS to the previous month (March) — so we shift back by 1 month.
+    // ===== DATE: billing-date-minus-1-month for ALL Max transactions =====
+    // תאריך חיוב = when the bank deducts the credit card bill (e.g. April 3).
+    // The expense BELONGS to the previous month (March) — shift back by 1 month.
+    // This applies to both installments AND regular transactions, so a Feb 27
+    // purchase billed in April is correctly attributed to March, not February.
     let date = purchaseDate;
     let billingDateStr = null;
-    if (isInstallment && colBillingDate >= 0) {
+    if (colBillingDate >= 0) {
       billingDateStr = parseMaxDate(row[colBillingDate]);
-    } else if (isInstallment) {
+    } else {
       // No billing date column — scan row for a second date-like cell
       for (let c = 0; c < row.length; c++) {
         if (c === colDate) continue;
@@ -1035,7 +1041,7 @@ function parseMaxRows(rows) {
         }
       }
     }
-    if (isInstallment && billingDateStr) {
+    if (billingDateStr) {
       // Shift 1 month back: April billing → March display
       const bd = new Date(billingDateStr + 'T12:00:00');
       bd.setMonth(bd.getMonth() - 1);
