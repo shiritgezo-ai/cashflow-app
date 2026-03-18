@@ -52,6 +52,19 @@ body { overflow: hidden; }
 .progress-fill.income { background: linear-gradient(90deg, #34c759, #30d158); }
 .progress-fill.expense { background: linear-gradient(90deg, #ff9500, #ff6b00); }
 
+/* Weekly budget rows */
+.week-row { margin-bottom: 10px; }
+.week-row:last-child { margin-bottom: 0; }
+.week-label { font-size: 12px; color: #888; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+.week-row.current .week-label { color: #7c5cbf; font-weight: 600; }
+.week-dates { font-size: 11px; color: #bbb; }
+.week-bar-wrap { display: flex; align-items: center; gap: 10px; }
+.week-bar { flex: 1; height: 8px; background: #e5e5ea; border-radius: 4px; overflow: hidden; }
+.week-bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
+.week-amount { min-width: 72px; text-align: right; display: flex; flex-direction: column; align-items: flex-end; }
+.week-amt-value { font-size: 13px; font-weight: 600; color: #1a1a2e; line-height: 1.2; }
+.week-amt-label { font-size: 10px; color: #aaa; }
+
 .savings-target-card { background: linear-gradient(135deg, #34c759, #28a745); color: white; border-radius: 16px; margin: 12px 16px 0; padding: 16px; display: flex; justify-content: space-between; align-items: center; }
 .savings-target-card .label { font-size: 13px; opacity: 0.85; }
 .savings-target-card .amount { font-size: 26px; font-weight: 700; }

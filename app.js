@@ -1,4 +1,4 @@
-const APP_VERSION = '2026-03-18a';
+const APP_VERSION = '2026-03-18b';
 
 // ===== CREDIT CARD PAYMENT DETECTION =====
 // Detects monthly credit card settlement rows in bank (Leumi) data.
@@ -198,6 +198,79 @@ function getProjectedExpenses(year, month) {
   return result;
 }
 
+// ===== WEEKLY BUDGET =====
+function renderWeeklyBudget(cashflow, monthTx, thisYear, thisMonth, isCurrentMonth) {
+  const el = document.getElementById('weekly-budget-card');
+  if (!el) return;
+
+  const now = new Date();
+  const daysInMonth = new Date(thisYear, thisMonth + 1, 0).getDate();
+  // today: day-of-month if current month; daysInMonth+1 if past (all past); 0 if future (none past)
+  const today = isCurrentMonth ? now.getDate()
+    : (new Date(thisYear, thisMonth + 1, 0) < now ? daysInMonth + 1 : 0);
+
+  // Split month into weeks of 7 days (last week may be shorter)
+  const weeks = [];
+  for (let d = 1; d <= daysInMonth; d += 7) {
+    const start = d, end = Math.min(d + 6, daysInMonth);
+    weeks.push({ start, end, days: end - start + 1 });
+  }
+
+  // Actual spending per week (from uploaded transactions, excluding transfers)
+  const weekSpending = weeks.map(w =>
+    monthTx.filter(t => t.debit > 0)
+      .reduce((sum, t) => {
+        const day = new Date(t.date).getDate();
+        return (day >= w.start && day <= w.end) ? sum + t.debit : sum;
+      }, 0)
+  );
+
+  const totalSpent = weekSpending.reduce((s, v) => s + v, 0);
+  // Total variable budget = what's left (cashflow) + what's already been spent on variable
+  const totalBudget = Math.max(0, cashflow + totalSpent);
+  // Per-week budget proportional to days
+  const weekBudget = weeks.map(w => totalBudget * w.days / daysInMonth);
+
+  const rows = weeks.map((w, i) => {
+    const isPast    = w.end < today;
+    const isCurrent = !isPast && w.start <= today;
+    const spent   = weekSpending[i];
+    const budget  = weekBudget[i];
+    const weekLabel = w.start === w.end ? `${w.start}` : `${w.start}–${w.end}`;
+    const monthName = new Date(thisYear, thisMonth, 1)
+      .toLocaleDateString('he-IL', { month: 'long' });
+
+    let fillPct = 0, fillColor = '', labelHtml = '';
+    if (isPast) {
+      const over = spent > budget;
+      fillPct    = budget > 0 ? Math.min(spent / budget * 100, 100) : 100;
+      fillColor  = over ? '#ff3b30' : '#34c759';
+      labelHtml  = `<span class="week-amt-value" style="color:${over ? '#ff3b30' : '#34c759'}">${fmt(spent)}</span><span class="week-amt-label">הוצאת</span>`;
+    } else if (isCurrent) {
+      fillPct   = budget > 0 ? Math.min(spent / budget * 100, 100) : 0;
+      fillColor = '#7c5cbf';
+      labelHtml = `<span class="week-amt-value">${fmt(budget)}</span><span class="week-amt-label">השבוע</span>`;
+    } else {
+      fillPct   = 0;
+      fillColor = '#c9b8f0';
+      labelHtml = `<span class="week-amt-value">${fmt(budget)}</span><span class="week-amt-label">לשבוע</span>`;
+    }
+
+    return `
+      <div class="week-row${isCurrent ? ' current' : ''}">
+        <div class="week-label">שבוע ${i + 1} <span class="week-dates">${weekLabel} ב${monthName}</span></div>
+        <div class="week-bar-wrap">
+          <div class="week-bar">
+            <div class="week-bar-fill" style="width:${fillPct.toFixed(1)}%;background:${fillColor};"></div>
+          </div>
+          <div class="week-amount">${labelHtml}</div>
+        </div>
+      </div>`;
+  }).join('');
+
+  el.innerHTML = `<div class="card-title">תקציב שבועי</div>${rows}`;
+}
+
 // ===== HOME =====
 function renderHome() {
   const now = new Date();
@@ -243,6 +316,9 @@ function renderHome() {
   const totalExp = txDebit + upcomingFixedExp + projected.total;
   const cashflow = totalIncome - totalExp - (state.settings.savingsTarget || 0);
   const expensePct = totalIncome > 0 ? Math.min(Math.round((totalExp / totalIncome) * 100), 100) : 0;
+
+  // Weekly budget breakdown
+  renderWeeklyBudget(cashflow, monthTx, thisYear, thisMonth, isCurrentMonth);
 
   // Update hero
   const cfEl = document.getElementById('home-cashflow');
