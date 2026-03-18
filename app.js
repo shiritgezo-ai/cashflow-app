@@ -258,7 +258,6 @@ function renderHome() {
     }
   }
   document.getElementById('home-income').textContent = fmt(totalIncome);
-  document.getElementById('home-fixed-exp').textContent = fmt(upcomingFixedExp);
   document.getElementById('home-tx-exp').textContent = fmt(txDebit);
   const projEl = document.getElementById('home-projected-exp');
   if (projEl) projEl.textContent = projected.total > 0 ? fmt(projected.total) : '—';
