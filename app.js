@@ -1166,17 +1166,18 @@ function parseMaxRows(rows) {
       }
     }
 
-    if (isNaN(amount) || amount <= 0) continue;
+    if (isNaN(amount) || amount === 0) continue;
 
-    // Max = credit card = debit (money out)
-    const id = `max_${date}_${description}_${amount}`.replace(/\s/g, '_');
+    // Max = credit card: negative charge = refund/credit (ביטול עסקה / זיכוי), positive = debit (money out)
+    const isCredit = amount < 0;
+    const id = `max_${date}_${description}_${Math.abs(amount)}${isCredit ? '_credit' : ''}`.replace(/\s/g, '_');
     results.push({
       id,
       source: 'max',
       date,
       description,
-      credit: 0,
-      debit: Math.abs(amount),
+      credit: isCredit ? Math.abs(amount) : 0,
+      debit: isCredit ? 0 : amount,
       isFixed: false,
       isTransfer: false,
       installmentCurrent,
